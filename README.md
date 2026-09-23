@@ -89,13 +89,13 @@ omp install github:<owner>/omp-sub-alias
 Pin a release tag, branch, or commit with a ref:
 
 ```bash
-omp install github:<owner>/omp-sub-alias#v0.1.1
+omp install github:<owner>/omp-sub-alias#v0.1.2
 ```
 
 A full GitHub URL is also accepted:
 
 ```bash
-omp install https://github.com/<owner>/omp-sub-alias#v0.1.1
+omp install https://github.com/<owner>/omp-sub-alias#v0.1.2
 ```
 
 The package manifest points OMP at `./src/index.ts`, so a GitHub install does
@@ -193,6 +193,11 @@ For example, `/login openai-codex-pro-device` opens
 `https://auth.openai.com/codex/device` and shows a one-time code. The login
 helper stores the resulting credential under `openai-codex-pro`; it does not
 create a separate model namespace and does not write to stock `openai-codex`.
+
+Each alias also registers a provider-scoped usage adapter backed by OMP's native
+Codex usage implementation. After the alias is authenticated,
+`omp usage --provider openai-codex-pro` reports that account's own quota under
+the alias provider ID instead of merging it with stock `openai-codex`.
 
 OMP's own `AuthStorage` owns the credentials. The extension delegates login
 and refresh to OMP's built-in Codex OAuth implementation but registers that

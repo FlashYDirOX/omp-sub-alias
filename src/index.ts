@@ -29,6 +29,7 @@ export {
 export {
   buildCodexAlias,
   buildCodexDeviceAlias,
+  buildCodexUsageAlias,
   CODEX_API,
   CODEX_DEVICE_PROVIDER_ID,
   CODEX_PROVIDER_ID,

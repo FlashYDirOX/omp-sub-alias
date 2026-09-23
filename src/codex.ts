@@ -4,7 +4,11 @@ import type {
   ModelSpec,
   OAuthCredentials,
   ProviderDefinition,
+  UsageFetchParams,
+  UsageProvider,
+  UsageReport,
 } from "@oh-my-pi/pi-ai";
+import { openaiCodexUsageProvider } from "@oh-my-pi/pi-ai/usage/openai-codex";
 import { buildModel } from "@oh-my-pi/pi-catalog/build";
 import type {
   ProviderConfig,
@@ -110,6 +114,7 @@ export function buildCodexAlias(
     config: {
       baseUrl,
       api: CODEX_API,
+      usage: buildCodexUsageAlias(alias),
       models: models.map((model) =>
         toProviderModelConfig(model, alias.label),
       ),
@@ -135,6 +140,83 @@ export function buildCodexAlias(
     },
     sourceModels,
     ...(device ? { device } : {}),
+  };
+}
+
+export function buildCodexUsageAlias(alias: AliasDefinition): UsageProvider {
+  const translateReport = (report: UsageReport): UsageReport => ({
+    ...report,
+    provider: alias.providerId,
+    limits: report.limits.map((limit) => ({
+      ...limit,
+      id: rewriteCodexProviderValue(limit.id, alias.providerId),
+      scope: {
+        ...limit.scope,
+        provider: alias.providerId,
+        ...(limit.scope.sharedGroup
+          ? {
+              sharedGroup: rewriteCodexProviderValue(
+                limit.scope.sharedGroup,
+                alias.providerId,
+              ),
+            }
+          : {}),
+      },
+    })),
+  });
+
+  const stockParams = (params: UsageFetchParams): UsageFetchParams => ({
+    ...params,
+    provider: CODEX_PROVIDER_ID,
+  });
+
+  return {
+    id: alias.providerId,
+    supports: (params) =>
+      params.provider === alias.providerId &&
+      (openaiCodexUsageProvider.supports?.(stockParams(params)) ??
+        params.credential.type === "oauth"),
+    fetchUsage: async (params, ctx) => {
+      if (params.provider !== alias.providerId) return null;
+      const report = await openaiCodexUsageProvider.fetchUsage(
+        stockParams(params),
+        ctx,
+      );
+      return report ? translateReport(report) : null;
+    },
+    ...(openaiCodexUsageProvider.parseRateLimitHeaders
+      ? {
+          parseRateLimitHeaders: (
+            headers: Record<string, string>,
+            now?: number,
+            context?: { responseStatus?: number },
+          ) => {
+            const report = openaiCodexUsageProvider.parseRateLimitHeaders!(
+              headers,
+              now,
+              context,
+            );
+            return report ? translateReport(report) : null;
+          },
+        }
+      : {}),
+    ...(openaiCodexUsageProvider.validatesCredentials !== undefined
+      ? {
+          validatesCredentials:
+            openaiCodexUsageProvider.validatesCredentials,
+        }
+      : {}),
+    ...(openaiCodexUsageProvider.retainLastGoodOnFailure !== undefined
+      ? {
+          retainLastGoodOnFailure:
+            openaiCodexUsageProvider.retainLastGoodOnFailure,
+        }
+      : {}),
+    ...(openaiCodexUsageProvider.failureBackoffMs !== undefined
+      ? {
+          failureBackoffMs: openaiCodexUsageProvider.failureBackoffMs,
+        }
+      : {}),
   };
 }
 
@@ -233,6 +315,17 @@ export function toProviderModelConfig(
         }
       : {}),
   };
+}
+
+function rewriteCodexProviderValue(
+  value: string,
+  aliasProviderId: string,
+): string {
+  if (value === CODEX_PROVIDER_ID) return aliasProviderId;
+  const prefix = `${CODEX_PROVIDER_ID}:`;
+  return value.startsWith(prefix)
+    ? `${aliasProviderId}${value.slice(CODEX_PROVIDER_ID.length)}`
+    : value;
 }
 
 function isRegisterableCodexModel(model: Model<Api>): boolean {

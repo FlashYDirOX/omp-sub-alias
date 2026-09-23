@@ -8,6 +8,7 @@ import type {
 } from "@oh-my-pi/pi-ai";
 import {
   buildCodexAlias,
+  buildCodexUsageAlias,
   CODEX_DEVICE_PROVIDER_ID,
   hydrateAliasModels,
   type CodexDeps,
@@ -94,6 +95,67 @@ describe("codex adapter", () => {
     expect(built.config.oauth?.name).toContain("Codex Pro");
     expect(built.config.models?.[0]?.id).toBe("gpt-5.6-codex");
     expect(built.config.models?.[0]?.preferWebsockets).toBe(true);
+  });
+
+  test("registers a provider-scoped Codex usage adapter", async () => {
+    const usage = buildCodexUsageAlias(alias);
+    expect(usage.id).toBe("openai-codex-pro");
+    expect(
+      usage.supports?.({
+        provider: alias.providerId,
+        credential: { type: "oauth", accessToken: "token" },
+      }),
+    ).toBe(true);
+    expect(
+      usage.supports?.({
+        provider: "openai-codex",
+        credential: { type: "oauth", accessToken: "token" },
+      }),
+    ).toBe(false);
+
+    const payload = {
+      plan_type: "pro",
+      rate_limit: {
+        allowed: true,
+        limit_reached: false,
+        primary_window: {
+          used_percent: 4,
+          limit_window_seconds: 17_940,
+          reset_at: 2_000_000_000,
+        },
+        secondary_window: {
+          used_percent: 10,
+          limit_window_seconds: 604_740,
+          reset_at: 2_000_500_000,
+        },
+      },
+      additional_rate_limits: [],
+    };
+    const report = await usage.fetchUsage(
+      {
+        provider: alias.providerId,
+        credential: {
+          type: "oauth",
+          accessToken: "fixture-token",
+          accountId: "acct-pro",
+        },
+      },
+      {
+        fetch: (async () =>
+          new Response(JSON.stringify(payload), {
+            status: 200,
+            headers: { "content-type": "application/json" },
+          })) as unknown as typeof fetch,
+      },
+    );
+
+    expect(report?.provider).toBe(alias.providerId);
+    expect(report?.metadata?.planType).toBe("pro");
+    expect(report?.limits.map((limit) => limit.id)).toEqual([
+      "openai-codex-pro:primary",
+      "openai-codex-pro:secondary",
+    ]);
+    expect(report?.limits.every((limit) => limit.scope.provider === alias.providerId)).toBe(true);
   });
 
   test("registers a headless device login that stores into the alias namespace", async () => {
