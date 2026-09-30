@@ -95,7 +95,7 @@ describe("OMP AuthStorage integration", () => {
     expect(registered?.storeCredentialsAs).toBe(alias.providerId);
 
     unregisterOAuthProvider(built.device.providerId);
-    store.close();
+    auth.close();
   });
 
   test("login, refresh, and logout stay in the alias credential namespace", async () => {
@@ -169,76 +169,76 @@ describe("OMP AuthStorage integration", () => {
       expires: Date.now() + 3_600_000,
       accountId: "stock-account",
     };
-    await auth.set("openai-codex", stock);
+    await auth.credentials.set("openai-codex", stock);
 
-    await auth.login(built.device!.providerId, {
+    await auth.oauth.login(built.device!.providerId, {
       onAuth() {},
       async onPrompt() {
         return "";
       },
     });
-    expect(auth.get(built.device!.providerId)).toBeUndefined();
-    expect(auth.get(alias.providerId)).toMatchObject({
+    expect(auth.credentials.get(built.device!.providerId)).toBeUndefined();
+    expect(auth.credentials.get(alias.providerId)).toMatchObject({
       type: "oauth",
       access: "device-access",
       accountId: "device-account",
     });
-    expect(auth.get("openai-codex")).toMatchObject({
+    expect(auth.credentials.get("openai-codex")).toMatchObject({
       type: "oauth",
       access: "stock-access",
       accountId: "stock-account",
     });
 
-    await auth.logout(alias.providerId);
-    expect(auth.get(alias.providerId)).toBeUndefined();
+    await auth.credentials.remove(alias.providerId);
+    expect(auth.credentials.get(alias.providerId)).toBeUndefined();
 
-    await auth.login(alias.providerId, {
+    await auth.oauth.login(alias.providerId, {
       onAuth() {},
       async onPrompt() {
         return "";
       },
     });
 
-    expect(auth.get("openai-codex")).toMatchObject({
+    expect(auth.credentials.get("openai-codex")).toMatchObject({
       type: "oauth",
       access: "stock-access",
       accountId: "stock-account",
     });
-    expect(auth.get(alias.providerId)).toMatchObject({
+    expect(auth.credentials.get(alias.providerId)).toMatchObject({
       type: "oauth",
       access: "alias-access",
       accountId: "alias-account",
     });
 
-    const aliasCredential = auth.get(alias.providerId);
+    const aliasCredential = auth.credentials.get(alias.providerId);
     if (!aliasCredential || aliasCredential.type !== "oauth") {
       throw new Error("alias OAuth credential missing");
     }
-    await auth.set(alias.providerId, {
+    await auth.credentials.set(alias.providerId, {
       ...aliasCredential,
       expires: Date.now() - 1,
     });
 
-    expect(await auth.getApiKey(alias.providerId)).toBe("alias-refreshed");
+    expect(await auth.keys.get(alias.providerId)).toBe("alias-refreshed");
     expect(refreshCount).toBe(1);
-    expect(auth.get(alias.providerId)).toMatchObject({
+    expect(auth.credentials.get(alias.providerId)).toMatchObject({
       type: "oauth",
       access: "alias-refreshed",
     });
-    expect(auth.get("openai-codex")).toMatchObject({
+    expect(auth.credentials.get("openai-codex")).toMatchObject({
       type: "oauth",
       access: "stock-access",
     });
 
-    await auth.logout(alias.providerId);
+    await auth.credentials.remove(alias.providerId);
 
-    expect(auth.get(alias.providerId)).toBeUndefined();
-    expect(auth.get("openai-codex")).toMatchObject({
+    expect(auth.credentials.get(alias.providerId)).toBeUndefined();
+    expect(auth.credentials.get("openai-codex")).toMatchObject({
       type: "oauth",
       access: "stock-access",
       accountId: "stock-account",
     });
 
-    store.close();
+    auth.close();
   });
 });
