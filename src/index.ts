@@ -4,9 +4,11 @@ import { getBundledModels } from "@oh-my-pi/pi-catalog/models";
 import { getCodexAccountId } from "@oh-my-pi/pi-catalog/wire/codex";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { loadAliasConfig } from "./config.js";
+import { assertHostCompatibility } from "./host.js";
 import { registerAliases } from "./register.js";
 
 export default function ompSubAlias(pi: ExtensionAPI): void {
+  assertHostCompatibility();
   registerAliases(pi, {
     codex: {
       getProviderDefinition,
@@ -36,4 +38,10 @@ export {
   hydrateAliasModels,
   toProviderModelConfig,
 } from "./codex.js";
+export {
+  assertHostCompatibility,
+  detectHostOmpVersion,
+  packageCatalogVersion,
+  parseOmpVersion,
+} from "./host.js";
 export { registerAliases } from "./register.js";
