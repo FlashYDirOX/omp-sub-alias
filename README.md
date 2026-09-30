@@ -54,18 +54,19 @@ compiled extension loader, so its version must match the active OMP binary
 exactly. This matters for Codex discovery because OMP patch releases can change
 the Codex client-version contract used by the account-scoped models endpoint.
 
-At extension load, omp-sub-alias resolves the real host from
-`process.execPath`, runs that executable with `--version`, and compares the
-result with the exact `pi-catalog` dependency. A mismatch fails fast instead of
-silently registering aliases with a stale model catalog. Live model metadata is
+At extension load, omp-sub-alias reads OMP's injected `pi.pi.VERSION` and
+compares it with the exact `pi-catalog` dependency. This uses the running
+host's own version signal rather than inferring it from a filesystem path. A
+mismatch fails fast instead of silently registering aliases with a stale model
+catalog. Live model metadata is
 still refreshed from OMP's active `ModelRegistry` after startup.
 
 For local development, after upgrading OMP run:
 
     bun run sync-host
 
-The sync helper resolves OMP from `OMP_REAL_BIN` / `OMP_BIN`, Homebrew when
-available, or `PATH`. It does not assume a Homebrew prefix. It updates the OMP
+The sync helper resolves OMP from `OMP_REAL_BIN` / `OMP_BIN`, the active
+`PATH`, or Homebrew as a fallback. It does not assume a Homebrew prefix. It updates the OMP
 package graph to the detected host version and regenerates the Bun install/lock
 state.
 

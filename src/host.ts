@@ -1,4 +1,3 @@
-import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 
 const CATALOG_PACKAGE = "@oh-my-pi/pi-catalog";
@@ -9,19 +8,18 @@ type PackageManifest = {
 };
 
 export interface HostCompatibility {
-  execPath: string;
   hostVersion: string;
   catalogVersion: string;
 }
 
 export interface HostCompatibilityOptions {
-  execPath?: string;
-  hostVersion?: string;
+  hostVersion: unknown;
   catalogVersion?: string;
 }
 
-export function parseOmpVersion(value: string): string | undefined {
-  return VERSION_RE.exec(value)?.[1];
+export function parseOmpVersion(value: unknown): string | undefined {
+  if (typeof value !== "string" && typeof value !== "number") return undefined;
+  return VERSION_RE.exec(String(value))?.[1];
 }
 
 export function packageCatalogVersion(
@@ -42,27 +40,17 @@ export function packageCatalogVersion(
   return version;
 }
 
-export function detectHostOmpVersion(
-  execPath = process.execPath,
-  runVersion: (path: string) => string = runOmpVersion,
-): string {
-  const output = runVersion(execPath);
-  const version = parseOmpVersion(output);
-  if (!version) {
+export function assertHostCompatibility(
+  options: HostCompatibilityOptions,
+): HostCompatibility {
+  const hostVersion = parseOmpVersion(options.hostVersion);
+  if (!hostVersion) {
     throw new Error(
-      "unable to parse OMP host version from " +
-        JSON.stringify(output.trim()),
+      "OMP host did not expose a parseable runtime VERSION: " +
+        JSON.stringify(options.hostVersion),
     );
   }
-  return version;
-}
 
-export function assertHostCompatibility(
-  options: HostCompatibilityOptions = {},
-): HostCompatibility {
-  const execPath = options.execPath ?? process.execPath;
-  const hostVersion =
-    options.hostVersion ?? detectHostOmpVersion(execPath);
   const catalogVersion =
     options.catalogVersion ?? packageCatalogVersion();
 
@@ -76,12 +64,5 @@ export function assertHostCompatibility(
     );
   }
 
-  return { execPath, hostVersion, catalogVersion };
-}
-
-function runOmpVersion(execPath: string): string {
-  return execFileSync(execPath, ["--version"], {
-    encoding: "utf8",
-    stdio: ["ignore", "pipe", "pipe"],
-  });
+  return { hostVersion, catalogVersion };
 }

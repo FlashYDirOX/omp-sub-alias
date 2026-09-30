@@ -1,7 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import {
   assertHostCompatibility,
-  detectHostOmpVersion,
   parseOmpVersion,
 } from "../src/host.js";
 
@@ -12,24 +11,22 @@ describe("host compatibility", () => {
     expect(parseOmpVersion("not-a-version")).toBeUndefined();
   });
 
-  test("derives the host version from the actual executable path", () => {
-    expect(
-      detectHostOmpVersion("/custom/omp", (path) => {
-        expect(path).toBe("/custom/omp");
-        return "omp/18.4.4";
+  test("rejects a missing runtime version signal", () => {
+    expect(() =>
+      assertHostCompatibility({
+        hostVersion: undefined,
+        catalogVersion: "18.4.4",
       }),
-    ).toBe("18.4.4");
+    ).toThrow("OMP host did not expose a parseable runtime VERSION");
   });
 
   test("accepts an exactly synchronized host/catalog pair", () => {
     expect(
       assertHostCompatibility({
-        execPath: "/custom/omp",
         hostVersion: "18.4.4",
         catalogVersion: "18.4.4",
       }),
     ).toEqual({
-      execPath: "/custom/omp",
       hostVersion: "18.4.4",
       catalogVersion: "18.4.4",
     });

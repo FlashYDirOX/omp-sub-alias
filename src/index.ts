@@ -8,7 +8,7 @@ import { assertHostCompatibility } from "./host.js";
 import { registerAliases } from "./register.js";
 
 export default function ompSubAlias(pi: ExtensionAPI): void {
-  assertHostCompatibility();
+  assertHostCompatibility({ hostVersion: pi.pi.VERSION });
   registerAliases(pi, {
     codex: {
       getProviderDefinition,
@@ -40,7 +40,6 @@ export {
 } from "./codex.js";
 export {
   assertHostCompatibility,
-  detectHostOmpVersion,
   packageCatalogVersion,
   parseOmpVersion,
 } from "./host.js";
