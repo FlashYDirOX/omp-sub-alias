@@ -34,9 +34,10 @@ openai-codex-work -> credential namespace C
 
 ## Compatibility
 
-The implementation targets the OMP 18.x extension API but requires its OMP
-package graph to match the host patch release exactly. The current development
-baseline is OMP 18.4.4. It uses the OMP-native two-argument provider API:
+The implementation targets the OMP 18.x extension API. Published compatibility
+is intentionally fail-closed and is expanded only after a host/catalog pair has
+passed the test matrix. The current package baseline is OMP 18.4.4. It uses the
+OMP-native two-argument provider API:
 
 ```ts
 pi.registerProvider(name, config)
@@ -47,28 +48,37 @@ It imports only current OMP packages (`@oh-my-pi/pi-ai`,
 on the legacy `@earendil-works/*` package names and does not use
 `readStoredCredential`.
 
-OMP 18.4.4 maps canonical `@oh-my-pi/pi-ai` and
-`@oh-my-pi/pi-coding-agent` imports back to the host runtime, preserving one
-provider/auth registry. `@oh-my-pi/pi-catalog` is not host-remapped by the
-compiled extension loader, so its version must match the active OMP binary
-exactly. This matters for Codex discovery because OMP patch releases can change
-the Codex client-version contract used by the account-scoped models endpoint.
+OMP maps canonical `@oh-my-pi/pi-ai` and `@oh-my-pi/pi-coding-agent`
+imports back to the host runtime, preserving one provider/auth registry.
+`@oh-my-pi/pi-catalog` is not host-remapped by the compiled extension loader,
+so compatibility is tracked explicitly by host/catalog pair. This matters for
+Codex discovery because OMP patch releases can change the client-version
+contract used by the account-scoped models endpoint.
 
 At extension load, omp-sub-alias reads OMP's injected `pi.pi.VERSION` and
-compares it with the exact `pi-catalog` dependency. This uses the running
-host's own version signal rather than inferring it from a filesystem path. A
-mismatch fails fast instead of silently registering aliases with a stale model
-catalog. Live model metadata is
-still refreshed from OMP's active `ModelRegistry` after startup.
+checks that host/catalog pair against the tested compatibility matrix. This uses
+the running host's own version signal rather than inferring it from a filesystem
+path. Untested pairs fail fast instead of silently registering aliases with a
+potentially stale discovery contract. Live model metadata is still refreshed
+from OMP's active `ModelRegistry` after startup.
+
+Current tested pairs:
+
+| OMP host | Bundled pi-catalog | Status |
+| --- | --- | --- |
+| 18.4.4 | 18.4.4 | supported |
+| 18.4.5 | 18.4.4 | supported |
+| 18.4.5 | 18.4.5 | supported for local development after `sync-host` |
 
 For local development, after upgrading OMP run:
 
     bun run sync-host
 
 The sync helper resolves OMP from `OMP_REAL_BIN` / `OMP_BIN`, the active
-`PATH`, or Homebrew as a fallback. It does not assume a Homebrew prefix. It updates the OMP
-package graph to the detected host version and regenerates the Bun install/lock
-state.
+`PATH`, or Homebrew as a fallback. It does not assume a Homebrew prefix or
+select this repository's own `node_modules` OMP. It updates the local catalog
+and development dependencies to the detected host version while preserving the
+published peer compatibility range, then regenerates the Bun install/lock state.
 
 ## Why this is a native OMP implementation
 
@@ -95,8 +105,8 @@ provider registration form.
 
 ### GitHub
 
-OMP 18.4.4 natively accepts GitHub/git plugin sources. After publishing this
-repository, install the default branch with:
+Tested OMP 18.4.x hosts natively accept GitHub/git plugin sources. After
+publishing this repository, install the default branch with:
 
 ```bash
 omp install github:FlashYDirOX/omp-codex-aliases
@@ -203,7 +213,8 @@ Start OMP normally and authenticate each provider separately:
 /login openai-codex-work-device
 ```
 
-OMP 18.4.4 also exposes a native device-code flow for headless/SSH use.
+The tested OMP 18.4.x hosts also expose a native device-code flow for
+headless/SSH use.
 For every alias, the extension registers a login-only `-device` companion.
 For example, `/login openai-codex-pro-device` opens
 `https://auth.openai.com/codex/device` and shows a one-time code. The login
@@ -238,7 +249,8 @@ After login:
 ```
 
 The alias does not maintain a hard-coded Codex model catalog. It starts from
-OMP 18.4.4's bundled `openai-codex` models so the provider is resolvable before
+the package baseline's bundled `openai-codex` models so the provider is
+resolvable before
 `session_start`, then refreshes from the live host model registry on
 `session_start` and again before agent turns. OMP's public
 `fetchDynamicModels(apiKey)` hook also runs Codex account-scoped discovery with
@@ -296,7 +308,8 @@ OMP's credential-storage ownership.
 - Version 0.1.x implements `openai-codex` aliases first. The config schema is
   intentionally provider-generic, but other OAuth providers need an explicit
   adapter before they are accepted.
-- OMP 18.4.4's public extension API lets an extension supply dynamic models but
+- The tested OMP 18.4.x public extension API lets an extension supply dynamic
+  models but
   does not expose the built-in Codex model manager's
   `dynamicModelsAuthoritative` switch. Alias discovery is account-scoped, but
   bundled fallback models may remain visible even when a particular account

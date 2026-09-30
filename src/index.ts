@@ -42,5 +42,6 @@ export {
   assertHostCompatibility,
   packageCatalogVersion,
   parseOmpVersion,
+  SUPPORTED_OMP_CATALOGS,
 } from "./host.js";
 export { registerAliases } from "./register.js";

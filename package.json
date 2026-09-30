@@ -33,15 +33,16 @@
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test",
     "verify": "npm run typecheck && npm test && npm run build && npm pack --dry-run",
-    "prepack": "npm run build",
-    "sync-host": "node scripts/sync-host.mjs && bun install"
+    "prepack": "npm run build && node scripts/prepare-package.mjs",
+    "sync-host": "node scripts/sync-host.mjs && bun install",
+    "prepare-package": "node scripts/prepare-package.mjs"
   },
   "dependencies": {
     "@oh-my-pi/pi-catalog": "18.4.4"
   },
   "peerDependencies": {
-    "@oh-my-pi/pi-ai": "18.4.4",
-    "@oh-my-pi/pi-coding-agent": "18.4.4"
+    "@oh-my-pi/pi-ai": ">=18.4.4 <18.4.6",
+    "@oh-my-pi/pi-coding-agent": ">=18.4.4 <18.4.6"
   },
   "peerDependenciesMeta": {
     "@oh-my-pi/pi-ai": {

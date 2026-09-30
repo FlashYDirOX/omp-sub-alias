@@ -20,24 +20,27 @@ describe("host compatibility", () => {
     ).toThrow("OMP host did not expose a parseable runtime VERSION");
   });
 
-  test("accepts an exactly synchronized host/catalog pair", () => {
-    expect(
-      assertHostCompatibility({
-        hostVersion: "18.4.4",
-        catalogVersion: "18.4.4",
-      }),
-    ).toEqual({
-      hostVersion: "18.4.4",
-      catalogVersion: "18.4.4",
-    });
+  test("accepts tested host/catalog pairs", () => {
+    for (const [hostVersion, catalogVersion] of [
+      ["18.4.4", "18.4.4"],
+      ["18.4.5", "18.4.4"],
+      ["18.4.5", "18.4.5"],
+    ] as const) {
+      expect(
+        assertHostCompatibility({ hostVersion, catalogVersion }),
+      ).toEqual({ hostVersion, catalogVersion });
+    }
   });
 
-  test("fails fast when the plugin catalog is stale", () => {
-    expect(() =>
-      assertHostCompatibility({
-        hostVersion: "18.4.4",
-        catalogVersion: "18.4.3",
-      }),
-    ).toThrow("OMP host 18.4.4 does not match bundled pi-catalog 18.4.3");
+  test("fails closed for untested host/catalog pairs", () => {
+    for (const [hostVersion, catalogVersion] of [
+      ["18.4.4", "18.4.5"],
+      ["18.4.5", "18.4.3"],
+      ["18.4.6", "18.4.5"],
+    ] as const) {
+      expect(() =>
+        assertHostCompatibility({ hostVersion, catalogVersion }),
+      ).toThrow("unsupported OMP/pi-catalog pair");
+    }
   });
 });

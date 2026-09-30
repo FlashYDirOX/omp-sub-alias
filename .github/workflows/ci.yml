@@ -1,0 +1,82 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.0"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+          registry-url: "https://registry.npmjs.org"
+      - run: bun install --frozen-lockfile
+      - run: bun run verify
+      - run: bun audit --production
+
+  omp-host-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        omp-version:
+          - "18.4.4"
+          - "18.4.5"
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+        with:
+          bun-version: "1.4.0"
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: "22"
+      - run: bun install --frozen-lockfile
+      - name: Install isolated OMP host
+        run: |
+          mkdir -p "$RUNNER_TEMP/omp-host"
+          cd "$RUNNER_TEMP/omp-host"
+          npm init -y >/dev/null
+          npm install --no-audit --no-fund "@oh-my-pi/pi-coding-agent@${{ matrix.omp-version }}" "@oh-my-pi/pi-ai@${{ matrix.omp-version }}" "@oh-my-pi/pi-catalog@${{ matrix.omp-version }}"
+      - name: Configure alias
+        run: |
+          mkdir -p "$HOME/.omp/agent"
+          cat >"$HOME/.omp/agent/omp-sub-alias.json" <<'JSON'
+          {
+            "aliases": [
+              {
+                "provider": "openai-codex",
+                "slug": "pro",
+                "label": "Codex Pro"
+              }
+            ]
+          }
+          JSON
+      - name: Smoke test host compatibility
+        env:
+          OMP: ${{ runner.temp }}/omp-host/node_modules/.bin/omp
+        run: |
+          "$OMP" --version
+          "$OMP" models openai-codex-pro --json --no-extensions --extension "$GITHUB_WORKSPACE/src/index.ts" >"$RUNNER_TEMP/models.json"
+          node - <<'NODE'
+          const fs = require("fs");
+          const data = JSON.parse(
+            fs.readFileSync(process.env.RUNNER_TEMP + "/models.json", "utf8"),
+          );
+          const rows = Array.isArray(data) ? data : data.models;
+          if (!Array.isArray(rows)) {
+            throw new Error("OMP models command returned an unexpected schema");
+          }
+          // CI intentionally has no private OAuth credentials. Account-scoped
+          // dynamic models can therefore be empty here; unit tests cover alias
+          // registration, while this matrix proves the real OMP host can load
+          // the extension and accept its version-compatibility guard.
+          NODE

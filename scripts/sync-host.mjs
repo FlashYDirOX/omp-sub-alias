@@ -20,8 +20,6 @@ const version = runtime.version;
 setExact(packageJson.dependencies, "@oh-my-pi/pi-catalog", version);
 setExact(packageJson.devDependencies, "@oh-my-pi/pi-ai", version);
 setExact(packageJson.devDependencies, "@oh-my-pi/pi-coding-agent", version);
-setExact(packageJson.peerDependencies, "@oh-my-pi/pi-ai", version);
-setExact(packageJson.peerDependencies, "@oh-my-pi/pi-coding-agent", version);
 
 writeFileSync(packagePath, JSON.stringify(packageJson, null, 2) + "\n");
 console.log(

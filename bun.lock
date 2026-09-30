@@ -15,8 +15,8 @@
         "typescript": "^6.0.2",
       },
       "peerDependencies": {
-        "@oh-my-pi/pi-ai": "18.4.4",
-        "@oh-my-pi/pi-coding-agent": "18.4.4",
+        "@oh-my-pi/pi-ai": ">=18.4.4 <18.4.6",
+        "@oh-my-pi/pi-coding-agent": ">=18.4.4 <18.4.6",
       },
       "optionalPeers": [
         "@oh-my-pi/pi-ai",

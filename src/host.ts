@@ -17,6 +17,13 @@ export interface HostCompatibilityOptions {
   catalogVersion?: string;
 }
 
+export const SUPPORTED_OMP_CATALOGS: Readonly<
+  Record<string, readonly string[]>
+> = Object.freeze({
+  "18.4.4": Object.freeze(["18.4.4"]),
+  "18.4.5": Object.freeze(["18.4.4", "18.4.5"]),
+});
+
 export function parseOmpVersion(value: unknown): string | undefined {
   if (typeof value !== "string" && typeof value !== "number") return undefined;
   return VERSION_RE.exec(String(value))?.[1];
@@ -53,14 +60,17 @@ export function assertHostCompatibility(
 
   const catalogVersion =
     options.catalogVersion ?? packageCatalogVersion();
+  const compatibleCatalogs = SUPPORTED_OMP_CATALOGS[hostVersion];
 
-  if (hostVersion !== catalogVersion) {
+  if (!compatibleCatalogs?.includes(catalogVersion)) {
+    const supportedHosts = Object.keys(SUPPORTED_OMP_CATALOGS).join(", ");
     throw new Error(
-      "OMP host " +
+      "unsupported OMP/pi-catalog pair: host " +
         hostVersion +
-        " does not match bundled pi-catalog " +
+        ", pi-catalog " +
         catalogVersion +
-        "; install an omp-sub-alias build synchronized to the active OMP runtime; local development can run bun run sync-host",
+        "; tested OMP hosts: " +
+        supportedHosts,
     );
   }
 
