@@ -70,7 +70,8 @@ export function assertHostCompatibility(
         ", pi-catalog " +
         catalogVersion +
         "; tested OMP hosts: " +
-        supportedHosts,
+        supportedHosts +
+        "; install a compatible omp-sub-alias release or use a tested OMP host",
     );
   }
 

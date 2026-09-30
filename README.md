@@ -70,7 +70,8 @@ Current tested pairs:
 | 18.4.5 | 18.4.4 | supported |
 | 18.4.5 | 18.4.5 | supported for local development after `sync-host` |
 
-For local development, after upgrading OMP run:
+For local development, after upgrading to a host already listed in the tested
+matrix, run:
 
     bun run sync-host
 
