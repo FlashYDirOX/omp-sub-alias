@@ -99,19 +99,19 @@ OMP 18.4.4 natively accepts GitHub/git plugin sources. After publishing this
 repository, install the default branch with:
 
 ```bash
-omp install github:<owner>/omp-sub-alias
+omp install github:FlashYDirOX/omp-codex-aliases
 ```
 
-Pin a release tag, branch, or commit with a ref:
+Pin a release tag, branch, or commit by replacing REF with that ref:
 
 ```bash
-omp install github:<owner>/omp-sub-alias#v0.1.2
+omp install github:FlashYDirOX/omp-codex-aliases#REF
 ```
 
 A full GitHub URL is also accepted:
 
 ```bash
-omp install https://github.com/<owner>/omp-sub-alias#v0.1.2
+omp install https://github.com/FlashYDirOX/omp-codex-aliases#REF
 ```
 
 The package manifest points OMP at `./src/index.ts`, so a GitHub install does
@@ -120,18 +120,18 @@ hook.
 
 ### Local development
 
-Install development dependencies and link the repository through OMP's plugin
-manager:
+Synchronize development dependencies with the active OMP host, then link the
+repository through OMP's plugin manager:
 
 ```bash
-bun install
+bun run sync-host
 omp plugin link /absolute/path/to/omp-sub-alias
 ```
 
-For build verification:
+For verification:
 
 ```bash
-bun run build
+bun run verify
 omp --extension /absolute/path/to/omp-sub-alias/src/index.ts
 ```
 

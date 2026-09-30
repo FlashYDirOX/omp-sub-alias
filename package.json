@@ -62,5 +62,13 @@
     "extensions": [
       "./src/index.ts"
     ]
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/FlashYDirOX/omp-codex-aliases.git"
+  },
+  "homepage": "https://github.com/FlashYDirOX/omp-codex-aliases#readme",
+  "bugs": {
+    "url": "https://github.com/FlashYDirOX/omp-codex-aliases/issues"
   }
 }
