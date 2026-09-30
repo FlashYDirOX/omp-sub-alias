@@ -175,6 +175,47 @@ describe("codex adapter", () => {
     expect(credentials.accountId).toBe("device-account");
   });
 
+  test("forwards AbortSignal through device token refresh", async () => {
+    const signal = new AbortController().signal;
+    let seenSignal: AbortSignal | undefined;
+    const base = deps();
+    const custom = deps({
+      getProviderDefinition: (providerId) => {
+        const definition = base.getProviderDefinition(providerId);
+        if (providerId !== CODEX_DEVICE_PROVIDER_ID || !definition) {
+          return definition;
+        }
+        return {
+          ...definition,
+          refreshToken: async (credentials, receivedSignal) => {
+            seenSignal = receivedSignal;
+            return credentials;
+          },
+        };
+      },
+    });
+
+    const built = buildCodexAlias(alias, custom, [model()]);
+    const oauth = built.device!.config.oauth as NonNullable<
+      typeof built.config.oauth
+    > & {
+      refreshToken?: (
+        credentials: OAuthCredentials,
+        signal?: AbortSignal,
+      ) => Promise<OAuthCredentials>;
+    };
+    await oauth.refreshToken!(
+      {
+        access: "device-access",
+        refresh: "device-refresh",
+        expires: Date.now() + 60_000,
+      },
+      signal,
+    );
+
+    expect(seenSignal).toBe(signal);
+  });
+
   test("skips non-chat catalog entries the extension model API cannot represent", () => {
     const built = buildCodexAlias(alias, deps(), [
       model(),

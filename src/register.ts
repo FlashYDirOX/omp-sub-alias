@@ -55,12 +55,14 @@ export function registerAliases(
 
     if (signature !== lastSignature) {
       const next = new Set<string>();
+      let registrationSucceeded = true;
 
       for (const alias of loaded.aliases) {
         let adapters: ProviderRegistration[];
         try {
           adapters = adaptersFor(alias, deps.codex, sourceModels);
         } catch (error) {
+          registrationSucceeded = false;
           loaded.errors.push(
             `${alias.providerId}: ${error instanceof Error ? error.message : String(error)}`,
           );
@@ -71,6 +73,7 @@ export function registerAliases(
             pi.registerProvider(providerId, config);
             next.add(providerId);
           } catch (error) {
+            registrationSucceeded = false;
             loaded.errors.push(
               `${providerId}: ${error instanceof Error ? error.message : String(error)}`,
             );
@@ -78,12 +81,14 @@ export function registerAliases(
         }
       }
 
-      for (const providerId of registered) {
-        if (!next.has(providerId)) pi.unregisterProvider(providerId);
-      }
+      if (registrationSucceeded) {
+        for (const providerId of registered) {
+          if (!next.has(providerId)) pi.unregisterProvider(providerId);
+        }
 
-      registered = next;
-      lastSignature = signature;
+        registered = next;
+        lastSignature = signature;
+      }
     }
 
     reportErrors(loaded.errors, ctx);
@@ -91,7 +96,11 @@ export function registerAliases(
 
   const reportErrors = (errors: readonly string[], ctx?: EventContextLike) => {
     const signature = errors.join("\n");
-    if (!signature || signature === lastErrorSignature) return;
+    if (!signature) {
+      lastErrorSignature = "";
+      return;
+    }
+    if (signature === lastErrorSignature) return;
     lastErrorSignature = signature;
     const message =
       errors.length === 1

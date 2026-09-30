@@ -102,6 +102,120 @@ describe("registration", () => {
     );
   });
 
+  test("retries a transient provider registration failure", () => {
+    class FailOnceHost extends FakeHost {
+      failed = false;
+
+      override registerProvider(name: string, config: ProviderConfig): void {
+        if (name === "openai-codex-pro" && !this.failed) {
+          this.failed = true;
+          throw new Error("transient registration failure");
+        }
+        super.registerProvider(name, config);
+      }
+    }
+
+    const host = new FailOnceHost();
+    registerAliases(host, runtime([alias("pro")]));
+    expect(host.providers.has("openai-codex-pro")).toBe(false);
+
+    host.handlers.get("before_agent_start")?.({}, {});
+
+    expect(host.providers.has("openai-codex-pro")).toBe(true);
+    expect(host.providers.has("openai-codex-pro-device")).toBe(true);
+  });
+
+  test("hot reload removes providers for deleted aliases", () => {
+    const host = new FakeHost();
+    let configured = [alias("pro"), alias("work")];
+    const deps = runtime([]);
+    deps.loadConfig = () => ({
+      aliases: [...configured],
+      errors: [],
+      files: [],
+    });
+
+    registerAliases(host, deps);
+    expect(host.providers.has("openai-codex-work")).toBe(true);
+    expect(host.providers.has("openai-codex-work-device")).toBe(true);
+
+    configured = [alias("pro")];
+    host.handlers.get("before_agent_start")?.({}, {});
+
+    expect(host.providers.has("openai-codex-pro")).toBe(true);
+    expect(host.providers.has("openai-codex-work")).toBe(false);
+    expect(host.providers.has("openai-codex-work-device")).toBe(false);
+  });
+
+  test("preserves existing aliases when a refresh registration fails", () => {
+    class WorkFailOnceHost extends FakeHost {
+      failed = false;
+
+      override registerProvider(name: string, config: ProviderConfig): void {
+        if (name === "openai-codex-work" && !this.failed) {
+          this.failed = true;
+          throw new Error("transient work failure");
+        }
+        super.registerProvider(name, config);
+      }
+    }
+
+    const host = new WorkFailOnceHost();
+    let configured = [alias("pro")];
+    const deps = runtime([]);
+    deps.loadConfig = () => ({
+      aliases: [...configured],
+      errors: [],
+      files: [],
+    });
+
+    registerAliases(host, deps);
+    expect(host.providers.has("openai-codex-pro")).toBe(true);
+
+    configured = [alias("pro"), alias("work")];
+    host.handlers.get("before_agent_start")?.({}, {});
+
+    expect(host.providers.has("openai-codex-pro")).toBe(true);
+    expect(host.providers.has("openai-codex-work")).toBe(false);
+
+    host.handlers.get("before_agent_start")?.({}, {});
+    expect(host.providers.has("openai-codex-work")).toBe(true);
+  });
+
+  test("reports the same error again after a clean refresh", () => {
+    const host = new FakeHost();
+    let errors: string[] = [];
+    const deps = runtime([alias("pro")]);
+    deps.loadConfig = () => ({
+      aliases: [alias("pro")],
+      errors: [...errors],
+      files: [],
+    });
+    const notifications: string[] = [];
+    const ctx = {
+      hasUI: true,
+      ui: {
+        notify(message: string) {
+          notifications.push(message);
+        },
+      },
+    };
+
+    registerAliases(host, deps);
+
+    errors = ["config failed"];
+    host.handlers.get("before_agent_start")?.({}, ctx);
+    host.handlers.get("before_agent_start")?.({}, ctx);
+    expect(notifications).toHaveLength(1);
+
+    errors = [];
+    host.handlers.get("before_agent_start")?.({}, ctx);
+
+    errors = ["config failed"];
+    host.handlers.get("before_agent_start")?.({}, ctx);
+    expect(notifications).toHaveLength(2);
+  });
+
   test("refreshes aliases from live host model metadata", () => {
     const host = new FakeHost();
     registerAliases(host, runtime([alias("pro")]));

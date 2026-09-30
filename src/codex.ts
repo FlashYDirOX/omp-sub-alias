@@ -234,8 +234,10 @@ export function buildCodexDeviceAlias(
     login: (callbacks) => definition.login!(callbacks),
     ...(definition.refreshToken
       ? {
-          refreshToken: (credentials: OAuthCredentials) =>
-            definition.refreshToken!(credentials),
+          refreshToken: (
+            credentials: OAuthCredentials,
+            signal?: AbortSignal,
+          ) => definition.refreshToken!(credentials, signal),
         }
       : {}),
     ...(definition.getApiKey
