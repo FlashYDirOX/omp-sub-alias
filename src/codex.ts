@@ -34,6 +34,7 @@ export interface CodexDeps {
     accessToken: string;
     accountId?: string;
     baseUrl?: string;
+    paths?: readonly string[];
   }): Promise<CodexDiscoveryResult | null>;
   getCodexAccountId(accessToken: string): string | undefined;
 }
@@ -120,15 +121,21 @@ export function buildCodexAlias(
       ),
       oauth,
       fetchDynamicModels: async (apiKey) => {
-        if (!apiKey) return [];
+        if (!apiKey) {
+          throw new Error("Codex alias discovery has no authenticated credential");
+        }
 
         const accountId = deps.getCodexAccountId(apiKey);
         const result = await deps.fetchCodexModels({
           accessToken: apiKey,
           ...(accountId ? { accountId } : {}),
           baseUrl,
+          paths: ["/codex/models"],
         });
-        if (!result || result.rejectedStatus !== undefined) return [];
+        if (!result) {
+          throw new Error("Codex alias model discovery unavailable");
+        }
+        if (result.rejectedStatus !== undefined) return [];
 
         return result.models.flatMap((modelSpec) => {
           const fullModel = buildModel(modelSpec) as Model<Api>;

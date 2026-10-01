@@ -271,6 +271,7 @@ describe("codex adapter", () => {
   test("discovers account-scoped models with the alias access token", async () => {
     let seenAccessToken = "";
     let seenAccountId: string | undefined;
+    let seenPaths: readonly string[] | undefined;
 
     const built = buildCodexAlias(
       alias,
@@ -282,6 +283,7 @@ describe("codex adapter", () => {
         fetchCodexModels: async (options) => {
           seenAccessToken = options.accessToken;
           seenAccountId = options.accountId;
+          seenPaths = options.paths;
           return {
             models: [
               model({
@@ -298,7 +300,42 @@ describe("codex adapter", () => {
 
     expect(seenAccessToken).toBe("alias-access");
     expect(seenAccountId).toBe("acct-alias");
+    expect(seenPaths).toEqual(["/codex/models"]);
     expect(dynamic.map((entry) => entry.id)).toEqual(["gpt-account-only"]);
+  });
+
+  test("surfaces missing credentials and transient discovery failures", async () => {
+    const missingCredential = buildCodexAlias(alias, deps());
+    expect(
+      missingCredential.config.fetchDynamicModels!(undefined),
+    ).rejects.toThrow("no authenticated credential");
+
+    const transient = buildCodexAlias(
+      alias,
+      deps({
+        fetchCodexModels: async () => null,
+      }),
+    );
+    expect(
+      transient.config.fetchDynamicModels!("alias-access"),
+    ).rejects.toThrow("model discovery unavailable");
+  });
+
+  test("returns an empty catalog only for explicit credential rejection", async () => {
+    for (const rejectedStatus of [401, 403] as const) {
+      const built = buildCodexAlias(
+        alias,
+        deps({
+          fetchCodexModels: async () => ({
+            models: [],
+            rejectedStatus,
+          }),
+        }),
+      );
+      expect(
+        await built.config.fetchDynamicModels!("alias-access"),
+      ).toEqual([]);
+    }
   });
 
   test("does not redirect alias credentials back to stock provider", async () => {
