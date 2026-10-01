@@ -24,6 +24,7 @@ export interface AliasLoadResult {
 export interface LoadConfigOptions {
   cwd?: string;
   home?: string;
+  agentDir?: string;
   paths?: readonly string[];
 }
 
@@ -32,9 +33,10 @@ const SLUG_RE = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 export function defaultConfigPaths(
   cwd = process.cwd(),
   home = homedir(),
+  agentDir = join(home, ".omp", "agent"),
 ): string[] {
   return [
-    join(home, ".omp", "agent", "omp-sub-alias.json"),
+    join(agentDir, "omp-sub-alias.json"),
     join(cwd, ".omp", "omp-sub-alias.json"),
   ];
 }
@@ -68,7 +70,12 @@ export function makeAliasDefinition(
 export function loadAliasConfig(options: LoadConfigOptions = {}): AliasLoadResult {
   const paths =
     options.paths ??
-    defaultConfigPaths(options.cwd ?? process.cwd(), options.home ?? homedir());
+    defaultConfigPaths(
+      options.cwd ?? process.cwd(),
+      options.home ?? homedir(),
+      options.agentDir ??
+        join(options.home ?? homedir(), ".omp", "agent"),
+    );
   const byProviderId = new Map<string, AliasDefinition>();
   const errors: string[] = [];
   const files: string[] = [];

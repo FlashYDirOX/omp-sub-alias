@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -30,6 +30,44 @@ describe("config", () => {
     expect(() =>
       makeAliasDefinition({ provider: "openai-codex", slug: "Pro" }),
     ).toThrow();
+  });
+
+  test("uses the host agent directory for profile-aware user config", () => {
+    const root = mkdtempSync(join(tmpdir(), "omp-sub-alias-config-"));
+    try {
+      const agentDir = join(root, "profiles", "work", "agent");
+      const projectDir = join(root, "project");
+      mkdirSync(agentDir, { recursive: true });
+      mkdirSync(join(projectDir, ".omp"), { recursive: true });
+      writeFileSync(
+        join(agentDir, "omp-sub-alias.json"),
+        JSON.stringify({
+          aliases: [
+            {
+              provider: "openai-codex",
+              slug: "pro",
+              label: "Profile Pro",
+            },
+          ],
+        }),
+      );
+
+      const loaded = loadAliasConfig({
+        cwd: projectDir,
+        home: join(root, "unused-home"),
+        agentDir,
+      });
+
+      expect(loaded.errors).toEqual([]);
+      expect(loaded.aliases.map((alias) => alias.label)).toEqual([
+        "Profile Pro",
+      ]);
+      expect(loaded.files).toEqual([
+        join(agentDir, "omp-sub-alias.json"),
+      ]);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 
   test("project config overrides the same alias from user config", () => {

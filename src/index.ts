@@ -19,7 +19,10 @@ export default function ompSubAlias(pi: ExtensionAPI): void {
       fetchCodexModels,
       getCodexAccountId,
     },
-    loadConfig: loadAliasConfig,
+    loadConfig: () =>
+      loadAliasConfig({
+        agentDir: pi.pi.getAgentDir(),
+      }),
   });
 }
 

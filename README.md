@@ -161,11 +161,17 @@ Configuration is JSON. The extension reads the user file first and then the
 project file; a project alias with the same generated provider id overrides the
 user entry.
 
-User configuration:
+User/profile configuration lives beside the active OMP agent state. For the
+default profile this is:
 
 ```text
 ~/.omp/agent/omp-sub-alias.json
 ```
+
+Named OMP profiles automatically use their own agent directory, for example
+`~/.omp/profiles/work/agent/omp-sub-alias.json`. The extension derives
+this path from OMP runtime `getAgentDir()` rather than assuming the
+default profile.
 
 Project configuration:
 
