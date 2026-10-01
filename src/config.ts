@@ -59,6 +59,12 @@ export function makeAliasDefinition(
     );
   }
 
+  if (slug === "device" || slug.endsWith("-device")) {
+    throw new Error(
+      `aliases[${index}].slug reserves the device companion namespace`,
+    );
+  }
+
   return {
     provider,
     slug,

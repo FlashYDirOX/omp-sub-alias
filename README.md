@@ -208,6 +208,11 @@ openai-codex-work
 Slugs are lowercase ASCII words separated by hyphens
 (`^[a-z0-9]+(?:-[a-z0-9]+)*$`).
 
+`device` and slugs ending in `-device` are reserved for the
+headless-login companion namespace. The extension also rejects aliases whose
+generated provider id is already built into OMP, and validates all configured
+alias/companion ids before registration so one alias cannot overwrite another.
+
 ## Login
 
 Start OMP normally and authenticate each provider separately:

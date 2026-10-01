@@ -68,15 +68,17 @@ describe("OMP AuthStorage integration", () => {
                 expires: Date.now() + 3_600_000,
               }),
             }
-          : {
-              id: "openai-codex",
-              name: "ChatGPT Plus/Pro (Codex Subscription)",
-              login: async () => ({
-                access: "browser-access",
-                refresh: "browser-refresh",
-                expires: Date.now() + 3_600_000,
-              }),
-            },
+          : providerId === "openai-codex"
+            ? {
+                id: "openai-codex",
+                name: "ChatGPT Plus/Pro (Codex Subscription)",
+                login: async () => ({
+                  access: "browser-access",
+                  refresh: "browser-refresh",
+                  expires: Date.now() + 3_600_000,
+                }),
+              }
+            : undefined,
       getBundledModels: () => [sourceModel()],
       fetchCodexModels: async () => ({ models: [] }),
       getCodexAccountId: () => undefined,

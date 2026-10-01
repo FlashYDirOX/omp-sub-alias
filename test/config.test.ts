@@ -23,6 +23,14 @@ describe("config", () => {
     });
   });
 
+  test("reserves device companion slugs", () => {
+    for (const slug of ["device", "pro-device"]) {
+      expect(() =>
+        makeAliasDefinition({ provider: "openai-codex", slug }),
+      ).toThrow("reserves the device companion namespace");
+    }
+  });
+
   test("rejects unsafe slugs", () => {
     expect(() =>
       makeAliasDefinition({ provider: "openai-codex", slug: "../pro" }),

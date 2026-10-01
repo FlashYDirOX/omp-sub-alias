@@ -64,14 +64,17 @@ function runtime(aliases: AliasDefinition[]): AliasRuntimeDeps {
   return {
     loadConfig: () => ({ aliases: [...aliases], errors: [], files: [] }),
     codex: {
-      getProviderDefinition: (providerId) =>
-        providerId === "openai-codex-device"
-          ? {
-              ...definition,
-              id: "openai-codex-device",
-              name: "ChatGPT Plus/Pro (Codex, headless/device)",
-            }
-          : definition,
+      getProviderDefinition: (providerId) => {
+        if (providerId === "openai-codex") return definition;
+        if (providerId === "openai-codex-device") {
+          return {
+            ...definition,
+            id: "openai-codex-device",
+            name: "ChatGPT Plus/Pro (Codex, headless/device)",
+          };
+        }
+        return undefined;
+      },
       getBundledModels: () => [sourceModel()],
       fetchCodexModels: async () => ({ models: [] }),
       getCodexAccountId: () => undefined,
@@ -88,6 +91,23 @@ describe("registration", () => {
     expect(host.providers.has("openai-codex")).toBe(false);
   });
 
+  test("rejects generated provider id collisions before registration", () => {
+    const host = new FakeHost();
+    const configured: AliasDefinition[] = [
+      alias("pro"),
+      {
+        provider: "openai-codex",
+        slug: "pro-device",
+        label: "Collision",
+        providerId: "openai-codex-pro-device",
+      },
+    ];
+
+    registerAliases(host, runtime(configured));
+
+    expect(host.providers.size).toBe(0);
+  });
+
   test("registers multiple independent aliases", () => {
     const host = new FakeHost();
     registerAliases(host, runtime([alias("pro"), alias("work")]));
@@ -99,6 +119,85 @@ describe("registration", () => {
     ]);
     expect(host.providers.get("openai-codex-pro")?.oauth).not.toBe(
       host.providers.get("openai-codex-work")?.oauth,
+    );
+  });
+
+  test("rejects a provider id already owned by OMP", () => {
+    const host = new FakeHost();
+    const deps = runtime([alias("pro")]);
+    const original = deps.codex.getProviderDefinition;
+    deps.codex.getProviderDefinition = (providerId) =>
+      providerId === "openai-codex-pro"
+        ? {
+            id: providerId,
+            name: "Built-in Pro",
+            login: async () => ({
+              access: "builtin",
+              refresh: "builtin",
+              expires: Date.now() + 60_000,
+            }),
+          }
+        : original(providerId);
+
+    registerAliases(host, deps);
+
+    expect(host.providers.has("openai-codex-pro")).toBe(false);
+    expect(host.providers.has("openai-codex-pro-device")).toBe(false);
+  });
+
+  test("rolls back a newly registered alias when its companion fails", () => {
+    class FailDeviceOnceHost extends FakeHost {
+      failed = false;
+
+      override registerProvider(name: string, config: ProviderConfig): void {
+        if (name === "openai-codex-pro-device" && !this.failed) {
+          this.failed = true;
+          throw new Error("transient device failure");
+        }
+        super.registerProvider(name, config);
+      }
+    }
+
+    const host = new FailDeviceOnceHost();
+    registerAliases(host, runtime([alias("pro")]));
+    expect(host.providers.has("openai-codex-pro")).toBe(false);
+    expect(host.providers.has("openai-codex-pro-device")).toBe(false);
+
+    host.handlers.get("before_agent_start")?.({}, {});
+    expect(host.providers.has("openai-codex-pro")).toBe(true);
+    expect(host.providers.has("openai-codex-pro-device")).toBe(true);
+  });
+
+  test("restores previous configs when a refresh fails after partial mutation", () => {
+    class FailDeviceOnRefreshHost extends FakeHost {
+      failDevice = false;
+
+      override registerProvider(name: string, config: ProviderConfig): void {
+        super.registerProvider(name, config);
+        if (name === "openai-codex-pro-device" && this.failDevice) {
+          throw new Error("device refresh failure");
+        }
+      }
+    }
+
+    const host = new FailDeviceOnRefreshHost();
+    registerAliases(host, runtime([alias("pro")]));
+    expect(
+      host.providers.get("openai-codex-pro")?.models?.map((model) => model.id),
+    ).toEqual(["gpt-5.6-codex"]);
+    const previousDevice = host.providers.get("openai-codex-pro-device");
+
+    host.failDevice = true;
+    const live = sourceModel("gpt-live");
+    host.handlers.get("session_start")?.({}, {
+      modelRegistry: { getAll: () => [live] },
+    });
+
+    expect(
+      host.providers.get("openai-codex-pro")?.models?.map((model) => model.id),
+    ).toEqual(["gpt-5.6-codex"]);
+    expect(host.providers.get("openai-codex-pro-device")).toBe(
+      previousDevice,
     );
   });
 
