@@ -29,13 +29,14 @@
   ],
   "license": "MIT",
   "scripts": {
-    "build": "tsc -p tsconfig.build.json",
+    "build": "npm run clean && tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "test": "bun test",
     "verify": "npm run typecheck && npm test && npm run build && npm pack --dry-run",
     "prepack": "npm run build && node scripts/prepare-package.mjs",
     "sync-host": "node scripts/sync-host.mjs && bun install",
-    "prepare-package": "node scripts/prepare-package.mjs"
+    "prepare-package": "node scripts/prepare-package.mjs",
+    "clean": "node scripts/clean-dist.mjs"
   },
   "dependencies": {
     "@oh-my-pi/pi-catalog": "18.4.4"
