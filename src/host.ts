@@ -5,11 +5,13 @@ const VERSION_RE = /\b(\d+\.\d+\.\d+)(?:[-+][0-9A-Za-z.-]+)?\b/;
 
 type PackageManifest = {
   dependencies?: Record<string, string>;
+  devDependencies?: Record<string, string>;
 };
 
 export interface HostCompatibility {
-  hostVersion: string;
+  hostVersion: string | undefined;
   catalogVersion: string;
+  verified: boolean;
 }
 
 export interface HostCompatibilityOptions {
@@ -17,12 +19,17 @@ export interface HostCompatibilityOptions {
   catalogVersion?: string;
 }
 
-export const SUPPORTED_OMP_CATALOGS: Readonly<
+export const VERIFIED_OMP_CATALOGS: Readonly<
   Record<string, readonly string[]>
 > = Object.freeze({
   "18.4.4": Object.freeze(["18.4.4"]),
   "18.4.5": Object.freeze(["18.4.4", "18.4.5"]),
+  "18.4.9": Object.freeze(["18.4.9"]),
 });
+
+// Backwards-compatible export name. This is a verification record, not a
+// runtime allow-list.
+export const SUPPORTED_OMP_CATALOGS = VERIFIED_OMP_CATALOGS;
 
 export function parseOmpVersion(value: unknown): string | undefined {
   if (typeof value !== "string" && typeof value !== "number") return undefined;
@@ -35,7 +42,9 @@ export function packageCatalogVersion(
   const manifest = JSON.parse(
     readFileSync(manifestUrl, "utf8"),
   ) as PackageManifest;
-  const raw = manifest.dependencies?.[CATALOG_PACKAGE];
+  const raw =
+    manifest.dependencies?.[CATALOG_PACKAGE] ??
+    manifest.devDependencies?.[CATALOG_PACKAGE];
   const version = raw ? parseOmpVersion(raw) : undefined;
   if (!version || raw !== version) {
     throw new Error(
@@ -51,29 +60,17 @@ export function assertHostCompatibility(
   options: HostCompatibilityOptions,
 ): HostCompatibility {
   const hostVersion = parseOmpVersion(options.hostVersion);
-  if (!hostVersion) {
-    throw new Error(
-      "OMP host did not expose a parseable runtime VERSION: " +
-        JSON.stringify(options.hostVersion),
-    );
-  }
-
   const catalogVersion =
     options.catalogVersion ?? packageCatalogVersion();
-  const compatibleCatalogs = SUPPORTED_OMP_CATALOGS[hostVersion];
 
-  if (!compatibleCatalogs?.includes(catalogVersion)) {
-    const supportedHosts = Object.keys(SUPPORTED_OMP_CATALOGS).join(", ");
-    throw new Error(
-      "unsupported OMP/pi-catalog pair: host " +
-        hostVersion +
-        ", pi-catalog " +
-        catalogVersion +
-        "; tested OMP hosts: " +
-        supportedHosts +
-        "; install a compatible omp-sub-alias release or use a tested OMP host",
-    );
-  }
-
-  return { hostVersion, catalogVersion };
+  // A version absent from the verification matrix is not evidence of
+  // incompatibility. Actual missing/changed APIs are checked at extension
+  // startup and by host smoke verification.
+  return {
+    hostVersion,
+    catalogVersion,
+    verified:
+      hostVersion !== undefined &&
+      VERIFIED_OMP_CATALOGS[hostVersion]?.includes(catalogVersion) === true,
+  };
 }

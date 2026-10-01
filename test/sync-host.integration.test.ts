@@ -25,35 +25,36 @@ afterEach(() => {
 });
 
 describe("sync-host", () => {
-  test("syncs a tested host without mutating published peer ranges", () => {
-    const fixture = makeFixture("18.4.5");
+  test("syncs the current host without narrowing future compatibility", () => {
+    const fixture = makeFixture("18.4.9");
     const result = runSync(fixture);
     expect(result.status).toBe(0);
 
     const manifest = JSON.parse(readFileSync(fixture.manifest, "utf8"));
-    expect(manifest.dependencies["@oh-my-pi/pi-catalog"]).toBe("18.4.5");
-    expect(manifest.devDependencies["@oh-my-pi/pi-ai"]).toBe("18.4.5");
+    expect(manifest.dependencies?.["@oh-my-pi/pi-catalog"]).toBeUndefined();
+    expect(manifest.devDependencies["@oh-my-pi/pi-catalog"]).toBe("18.4.9");
+    expect(manifest.devDependencies["@oh-my-pi/pi-ai"]).toBe("18.4.9");
     expect(manifest.devDependencies["@oh-my-pi/pi-coding-agent"]).toBe(
-      "18.4.5",
+      "18.4.9",
     );
-    expect(manifest.peerDependencies["@oh-my-pi/pi-ai"]).toBe(
-      ">=18.4.4 <18.4.6",
-    );
-    expect(manifest.peerDependencies["@oh-my-pi/pi-coding-agent"]).toBe(
-      ">=18.4.4 <18.4.6",
-    );
+    expect(manifest.peerDependencies["@oh-my-pi/pi-ai"]).toBe("*");
+    expect(manifest.peerDependencies["@oh-my-pi/pi-coding-agent"]).toBe("*");
   });
 
-  test("rejects an untested host before mutating package.json", () => {
-    const fixture = makeFixture("18.4.6");
-    const before = readFileSync(fixture.manifest, "utf8");
+  test("syncs a newer unverified host so verification can decide compatibility", () => {
+    const fixture = makeFixture("19.0.0");
     const result = runSync(fixture);
+    expect(result.status).toBe(0);
+    const manifest = JSON.parse(readFileSync(fixture.manifest, "utf8"));
+    expect(manifest.devDependencies["@oh-my-pi/pi-catalog"]).toBe("19.0.0");
+  });
 
-    expect(result.status).not.toBe(0);
-    expect(result.stderr.toString()).toContain(
-      "outside the tested peer range",
-    );
-    expect(readFileSync(fixture.manifest, "utf8")).toBe(before);
+  test("syncs an older unverified host so verification can determine compatibility", () => {
+    const fixture = makeFixture("18.4.3");
+    const result = runSync(fixture);
+    expect(result.status).toBe(0);
+    const manifest = JSON.parse(readFileSync(fixture.manifest, "utf8"));
+    expect(manifest.devDependencies["@oh-my-pi/pi-catalog"]).toBe("18.4.3");
   });
 });
 

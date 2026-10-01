@@ -34,10 +34,12 @@ openai-codex-work -> credential namespace C
 
 ## Compatibility
 
-The implementation targets the OMP 18.x extension API. Published compatibility
-is intentionally fail-closed and is expanded only after a host/catalog pair has
-passed the test matrix. The current package baseline is OMP 18.4.4. It uses the
-OMP-native two-argument provider API:
+The implementation has verified OMP compatibility starting at 18.4.4. A host
+version is not treated as incompatible just because it has not yet been added to
+the verification matrix. Runtime startup fails only on demonstrated
+incompatibility, such as OMP actually lacking an API the extension requires; a
+version number by itself is diagnostic metadata. It uses the OMP-native
+two-argument provider API:
 
 ```ts
 pi.registerProvider(name, config)
@@ -48,38 +50,52 @@ It imports only current OMP packages (`@oh-my-pi/pi-ai`,
 on the legacy `@earendil-works/*` package names and does not use
 `readStoredCredential`.
 
-OMP maps canonical `@oh-my-pi/pi-ai` and `@oh-my-pi/pi-coding-agent`
-imports back to the host runtime, preserving one provider/auth registry.
-`@oh-my-pi/pi-catalog` is not host-remapped by the compiled extension loader,
-so compatibility is tracked explicitly by host/catalog pair. This matters for
-Codex discovery because OMP patch releases can change the client-version
-contract used by the account-scoped models endpoint.
+OMP's extension loader owns canonical resolution for the `@oh-my-pi/pi-*`
+host packages. OMP 18.4.9 includes `pi-catalog` remapping as well, but the
+symlinked development plugin's source graph can fall back to its local catalog
+copy; that path failed to resolve a transitive `pi-utils` import on the current
+host. The runtime bundle below keeps host-owned registries external while
+carrying the exact catalog logic the alias needs. Host/catalog pairs remain
+useful verification metadata because OMP patch releases can change discovery
+contracts, but they are not an allow-list.
 
-At extension load, omp-sub-alias reads OMP's injected `pi.pi.VERSION` and
-checks that host/catalog pair against the tested compatibility matrix. This uses
-the running host's own version signal rather than inferring it from a filesystem
-path. Untested pairs fail fast instead of silently registering aliases with a
-potentially stale discovery contract. Live model metadata is still refreshed
-from OMP's active `ModelRegistry` after startup.
+At extension load, omp-sub-alias checks the OMP capabilities it actually uses
+(`registerProvider`, `unregisterProvider`, event registration, and the runtime
+agent-directory accessor). The injected `pi.pi.VERSION` is retained as
+diagnostic/verification metadata, not as a version allow-list. Unverified
+host/catalog pairs continue running; a real API or registration failure is
+reported by the normal extension error path. Live model metadata is still
+refreshed from OMP's active `ModelRegistry` after startup.
 
-Current tested pairs:
+Current verified pairs:
 
 | OMP host | Bundled pi-catalog | Status |
 | --- | --- | --- |
 | 18.4.4 | 18.4.4 | supported |
 | 18.4.5 | 18.4.4 | supported |
-| 18.4.5 | 18.4.5 | supported for local development after `sync-host` |
+| 18.4.5 | 18.4.5 | verified for local development after `sync-host` |
+| 18.4.9 | 18.4.9 | verified |
 
-For local development, after upgrading to a host already listed in the tested
-matrix, run:
+For local development, after upgrading OMP, run:
 
     bun run sync-host
 
 The sync helper resolves OMP from `OMP_REAL_BIN` / `OMP_BIN`, the active
 `PATH`, or Homebrew as a fallback. It does not assume a Homebrew prefix or
 select this repository's own `node_modules` OMP. It updates the local catalog
-and development dependencies to the detected host version while preserving the
-published peer compatibility range, then regenerates the Bun install/lock state.
+and development dependencies to the detected host version without using the
+verification matrix as an allow-list, then regenerates the Bun install/lock
+state. Unverified OMP versions are allowed through this synchronization step so
+typechecking, tests, build verification, and a real extension-load smoke can
+determine whether anything actually broke.
+
+The runtime entry bundles the exact `pi-catalog` logic used for model metadata
+and discovery while keeping OMP-owned `pi-ai`, `pi-coding-agent`, `pi-utils`,
+`pi-natives`, and `omptype` imports external. This avoids symlink/dev-install
+module-resolution drift without creating duplicate host registries.
+`bun run smoke-host` skips when no usable OMP host or installed plugin is
+available. When both are present, an actual extension-load failure or a missing
+configured alias provider is a hard failure.
 
 ## Why this is a native OMP implementation
 

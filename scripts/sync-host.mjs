@@ -23,17 +23,13 @@ if (!hostPeerRange || aiPeerRange !== hostPeerRange) {
     "OMP peer dependency ranges must exist and stay synchronized",
   );
 }
-if (!satisfiesSupportedRange(version, hostPeerRange)) {
-  throw new Error(
-    "OMP host " +
-      version +
-      " is outside the tested peer range " +
-      hostPeerRange +
-      "; validate the host/catalog matrix and update the peer range before running sync-host",
-  );
+if (packageJson.dependencies && typeof packageJson.dependencies === "object") {
+  delete packageJson.dependencies["@oh-my-pi/pi-catalog"];
+  if (Object.keys(packageJson.dependencies).length === 0) {
+    delete packageJson.dependencies;
+  }
 }
-
-setExact(packageJson.dependencies, "@oh-my-pi/pi-catalog", version);
+setExact(packageJson.devDependencies, "@oh-my-pi/pi-catalog", version);
 setExact(packageJson.devDependencies, "@oh-my-pi/pi-ai", version);
 setExact(packageJson.devDependencies, "@oh-my-pi/pi-coding-agent", version);
 
@@ -41,31 +37,6 @@ writeFileSync(packagePath, JSON.stringify(packageJson, null, 2) + "\n");
 console.log(
   "Synced OMP package graph to " + version + " from " + runtime.path,
 );
-
-function satisfiesSupportedRange(version, range) {
-  const match = /^>=(\d+\.\d+\.\d+)\s+<(\d+\.\d+\.\d+)$/.exec(
-    range,
-  );
-  if (!match) {
-    throw new Error(
-      "unsupported OMP peer range format: " + JSON.stringify(range),
-    );
-  }
-  return (
-    compareVersions(version, match[1]) >= 0 &&
-    compareVersions(version, match[2]) < 0
-  );
-}
-
-function compareVersions(left, right) {
-  const a = left.split(".").map(Number);
-  const b = right.split(".").map(Number);
-  for (let index = 0; index < 3; index++) {
-    const delta = a[index] - b[index];
-    if (delta !== 0) return delta;
-  }
-  return 0;
-}
 
 function setExact(section, name, version) {
   if (!section || typeof section !== "object") {
