@@ -65,7 +65,42 @@ jobs:
           OMP: ${{ runner.temp }}/omp-host/node_modules/.bin/omp
         run: |
           "$OMP" --version
-          "$OMP" models openai-codex-pro --json --no-extensions --extension "$GITHUB_WORKSPACE/src/index.ts" >"$RUNNER_TEMP/models.json"
+          cat >"$GITHUB_WORKSPACE/.tmp-host-smoke.ts" <<'TS'
+          import plugin from "./src/index.ts";
+
+          export default function hostSmoke(pi: any) {
+            let registered = false;
+            const original = pi.registerProvider.bind(pi);
+            pi.registerProvider = (name: string, config: any) => {
+              if (name === "openai-codex-pro") {
+                if (!Array.isArray(config?.models) || config.models.length === 0) {
+                  throw new Error("alias provider registered without bootstrap models");
+                }
+                if (typeof config?.oauth?.login !== "function") {
+                  throw new Error("alias provider registered without OAuth login");
+                }
+                registered = true;
+                process.stderr.write(
+                  "HOST_SMOKE_OK version=" +
+                    String(pi.pi.VERSION) +
+                    " models=" +
+                    String(config.models.length) +
+                    "\n",
+                );
+              }
+              return original(name, config);
+            };
+            plugin(pi);
+            if (!registered) {
+              throw new Error("openai-codex-pro was not registered");
+            }
+          }
+          TS
+          "$OMP" models openai-codex-pro --json --no-extensions \
+            --extension "$GITHUB_WORKSPACE/.tmp-host-smoke.ts" \
+            >"$RUNNER_TEMP/models.json" 2>"$RUNNER_TEMP/models.err"
+          cat "$RUNNER_TEMP/models.err"
+          grep -q "HOST_SMOKE_OK version=${{ matrix.omp-version }}" "$RUNNER_TEMP/models.err"
           node - <<'NODE'
           const fs = require("fs");
           const data = JSON.parse(
@@ -75,8 +110,8 @@ jobs:
           if (!Array.isArray(rows)) {
             throw new Error("OMP models command returned an unexpected schema");
           }
-          // CI intentionally has no private OAuth credentials. Account-scoped
-          // dynamic models can therefore be empty here; unit tests cover alias
-          // registration, while this matrix proves the real OMP host can load
-          // the extension and accept its version-compatibility guard.
+          // CI intentionally has no private OAuth credentials, so OMP may hide
+          // the provider's models from the public models list until login. The
+          // HOST_SMOKE_OK marker above proves that the extension itself loaded
+          // and registered bootstrap models plus OAuth against this real host.
           NODE
