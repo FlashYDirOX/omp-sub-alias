@@ -75,7 +75,8 @@ function runtime(aliases: AliasDefinition[]): AliasRuntimeDeps {
         }
         return undefined;
       },
-      getBundledModels: () => [sourceModel()],
+      getBundledModels: (providerId) =>
+        providerId === "openai-codex" ? [sourceModel()] : [],
       fetchCodexModels: async () => ({ models: [] }),
       getCodexAccountId: () => undefined,
     },
@@ -122,7 +123,7 @@ describe("registration", () => {
     );
   });
 
-  test("rejects a provider id already owned by OMP", () => {
+  test("rejects a provider id already owned by an OMP provider definition", () => {
     const host = new FakeHost();
     const deps = runtime([alias("pro")]);
     const original = deps.codex.getProviderDefinition;
@@ -137,6 +138,26 @@ describe("registration", () => {
               expires: Date.now() + 60_000,
             }),
           }
+        : original(providerId);
+
+    registerAliases(host, deps);
+
+    expect(host.providers.has("openai-codex-pro")).toBe(false);
+    expect(host.providers.has("openai-codex-pro-device")).toBe(false);
+  });
+
+  test("rejects a provider id already present in the bundled catalog", () => {
+    const host = new FakeHost();
+    const deps = runtime([alias("pro")]);
+    const original = deps.codex.getBundledModels;
+    deps.codex.getBundledModels = (providerId) =>
+      providerId === "openai-codex-pro"
+        ? [
+            {
+              ...sourceModel("gpt-builtin-pro"),
+              provider: providerId,
+            },
+          ]
         : original(providerId);
 
     registerAliases(host, deps);

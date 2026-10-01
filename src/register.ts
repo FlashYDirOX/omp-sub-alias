@@ -181,7 +181,12 @@ function preexistingProviderIds(
   const occupied = new Set<string>();
   for (const { providerId } of registrations) {
     if (registered.has(providerId)) continue;
-    if (codex.getProviderDefinition(providerId)) occupied.add(providerId);
+    if (
+      codex.getProviderDefinition(providerId) ||
+      codex.getBundledModels(providerId).length > 0
+    ) {
+      occupied.add(providerId);
+    }
   }
   return [...occupied].sort();
 }
