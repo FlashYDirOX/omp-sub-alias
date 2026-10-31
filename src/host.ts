@@ -25,6 +25,7 @@ export const VERIFIED_OMP_CATALOGS: Readonly<
   "18.4.4": Object.freeze(["18.4.4"]),
   "18.4.5": Object.freeze(["18.4.4", "18.4.5"]),
   "18.4.9": Object.freeze(["18.4.9"]),
+  "18.14.1": Object.freeze(["18.14.1"]),
 });
 
 // Backwards-compatible export name. This is a verification record, not a

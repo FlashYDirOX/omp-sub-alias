@@ -30,6 +30,7 @@ describe("host compatibility", () => {
       ["18.4.5", "18.4.4"],
       ["18.4.5", "18.4.5"],
       ["18.4.9", "18.4.9"],
+      ["18.14.1", "18.14.1"],
     ] as const) {
       expect(
         assertHostCompatibility({ hostVersion, catalogVersion }),

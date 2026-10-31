@@ -1,6 +1,6 @@
-import { existsSync, readFileSync } from "node:fs";
+import { accessSync, constants, existsSync, readFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { delimiter, dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
@@ -8,11 +8,19 @@ const root = dirname(dirname(fileURLToPath(import.meta.url)));
 const candidates = [
   process.env.OMP_REAL_BIN,
   process.env.OMP_BIN,
+  ...(process.env.PATH ?? "").split(delimiter).map((dir) => join(dir, "omp")),
   "/opt/homebrew/bin/omp",
   "/usr/local/bin/omp",
 ].filter(Boolean);
 
-const omp = candidates.find((candidate) => existsSync(candidate));
+const omp = candidates.find((candidate) => {
+  try {
+    accessSync(candidate, constants.X_OK);
+    return true;
+  } catch {
+    return false;
+  }
+});
 if (!omp) {
   console.log("host smoke: SKIP (no stock OMP binary found)");
   process.exit(0);
@@ -39,6 +47,7 @@ const installed = [
   ...(inventory.npm ?? []),
   ...(inventory.git ?? []),
   ...(inventory.local ?? []),
+  ...(inventory.marketplace ?? []),
 ].find(
   (plugin) => plugin?.name === "omp-sub-alias" && plugin?.enabled !== false,
 );
@@ -73,7 +82,9 @@ const providers = new Set(
     .filter((provider) => typeof provider === "string"),
 );
 
-const configPath = join(homedir(), ".omp", "agent", "omp-sub-alias.json");
+const agentDir =
+  process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".omp", "agent");
+const configPath = join(agentDir, "omp-sub-alias.json");
 if (existsSync(configPath)) {
   const config = JSON.parse(readFileSync(configPath, "utf8"));
   const aliases = Array.isArray(config?.aliases)

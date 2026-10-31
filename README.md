@@ -50,14 +50,11 @@ It imports only current OMP packages (`@oh-my-pi/pi-ai`,
 on the legacy `@earendil-works/*` package names and does not use
 `readStoredCredential`.
 
-OMP's extension loader owns canonical resolution for the `@oh-my-pi/pi-*`
-host packages. OMP 18.4.9 includes `pi-catalog` remapping as well, but the
-symlinked development plugin's source graph can fall back to its local catalog
-copy; that path failed to resolve a transitive `pi-utils` import on the current
-host. The runtime bundle below keeps host-owned registries external while
-carrying the exact catalog logic the alias needs. Host/catalog pairs remain
-useful verification metadata because OMP patch releases can change discovery
-contracts, but they are not an allow-list.
+OMP's extension loader owns canonical resolution for the host's `pi-ai` and
+`pi-coding-agent` packages. The checked-in runtime bundle carries the catalog,
+`pi-utils`, and `omptype` code it needs, so older supported hosts do not need a
+project-local development dependency graph. Host/catalog pairs remain useful
+verification metadata, not an allow-list.
 
 At extension load, omp-sub-alias checks the OMP capabilities it actually uses
 (`registerProvider`, `unregisterProvider`, event registration, and the runtime
@@ -67,14 +64,22 @@ host/catalog pairs continue running; a real API or registration failure is
 reported by the normal extension error path. Live model metadata is still
 refreshed from OMP's active `ModelRegistry` after startup.
 
+Only Codex models with non-null context and output limits can be registered by
+the provider API. Models such as `gpt-image-2` with a null `maxTokens` value
+are excluded rather than assigned an invented limit.
+
 Current verified pairs:
 
 | OMP host | Bundled pi-catalog | Status |
 | --- | --- | --- |
 | 18.4.4 | 18.4.4 | supported |
+| 18.4.4 | 18.14.1 | dependency-free extension load verified |
 | 18.4.5 | 18.4.4 | supported |
 | 18.4.5 | 18.4.5 | verified for local development after `sync-host` |
+| 18.4.5 | 18.14.1 | dependency-free extension load verified |
 | 18.4.9 | 18.4.9 | verified |
+| 18.4.9 | 18.14.1 | dependency-free extension load verified |
+| 18.14.1 | 18.14.1 | verified |
 
 For local development, after upgrading OMP, run:
 
@@ -89,10 +94,13 @@ state. Unverified OMP versions are allowed through this synchronization step so
 typechecking, tests, build verification, and a real extension-load smoke can
 determine whether anything actually broke.
 
-The runtime entry bundles the exact `pi-catalog` logic used for model metadata
-and discovery while keeping OMP-owned `pi-ai`, `pi-coding-agent`, `pi-utils`,
-`pi-natives`, and `omptype` imports external. This avoids symlink/dev-install
-module-resolution drift without creating duplicate host registries.
+The runtime entry bundles the catalog, `pi-utils`, and `omptype` logic used for
+model metadata and discovery while keeping OMP-owned `pi-ai`,
+`pi-coding-agent`, and `pi-natives` imports external. This avoids source-graph
+resolution drift without creating duplicate host registries.
+The bundle omits the catalog's unrelated authentication-provider table; OAuth
+and provider credentials remain owned by the OMP host.
+Bundled third-party license notices are included in [LICENSE](LICENSE).
 `bun run smoke-host` skips when no usable OMP host or installed plugin is
 available. When both are present, an actual extension-load failure or a missing
 configured alias provider is a hard failure.
@@ -122,28 +130,28 @@ provider registration form.
 
 ### GitHub
 
-Tested OMP 18.4.x hosts natively accept GitHub/git plugin sources. After
+Tested OMP 18.4.x and 18.14.x hosts natively accept GitHub/git plugin sources. After
 publishing this repository, install the default branch with:
 
 ```bash
-omp install github:FlashYDirOX/omp-codex-aliases
+omp install github:FlashYDirOX/omp-sub-alias
 ```
 
 Pin a release tag, branch, or commit by replacing REF with that ref:
 
 ```bash
-omp install github:FlashYDirOX/omp-codex-aliases#REF
+omp install github:FlashYDirOX/omp-sub-alias#REF
 ```
 
 A full GitHub URL is also accepted:
 
 ```bash
-omp install https://github.com/FlashYDirOX/omp-codex-aliases#REF
+omp install https://github.com/FlashYDirOX/omp-sub-alias#REF
 ```
 
-The package manifest points OMP at `./src/index.ts`, so a GitHub install does
-not depend on a pre-generated `dist/` directory or a package build lifecycle
-hook.
+The package manifest points OMP at `./dist/index.js`. That generated runtime
+bundle is committed for GitHub installations; `bun run build` regenerates it
+from the source and pinned catalog. npm packages also include the same entry.
 
 ### Local development
 
@@ -241,7 +249,7 @@ Start OMP normally and authenticate each provider separately:
 /login openai-codex-work-device
 ```
 
-The tested OMP 18.4.x hosts also expose a native device-code flow for
+The tested OMP 18.4.x and 18.14.x hosts also expose a native device-code flow for
 headless/SSH use.
 For every alias, the extension registers a login-only `-device` companion.
 For example, `/login openai-codex-pro-device` opens
@@ -336,7 +344,7 @@ OMP's credential-storage ownership.
 - Version 0.1.x implements `openai-codex` aliases first. The config schema is
   intentionally provider-generic, but other OAuth providers need an explicit
   adapter before they are accepted.
-- The tested OMP 18.4.x public extension API lets an extension supply dynamic
+- The tested OMP 18.x public extension API lets an extension supply dynamic
   models but
   does not expose the built-in Codex model manager's
   `dynamicModelsAuthoritative` switch. Alias discovery is account-scoped, but

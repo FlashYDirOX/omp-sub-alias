@@ -6,6 +6,7 @@ import type {
   OAuthCredentials,
   ProviderDefinition,
 } from "@oh-my-pi/pi-ai";
+import { openaiCodexUsageProvider } from "@oh-my-pi/pi-ai/usage/openai-codex";
 import {
   buildCodexAlias,
   buildCodexUsageAlias,
@@ -100,6 +101,7 @@ describe("codex adapter", () => {
   test("registers a provider-scoped Codex usage adapter", async () => {
     const usage = buildCodexUsageAlias(alias);
     expect(usage.id).toBe("openai-codex-pro");
+    expect(usage.cacheVersion).toBe(openaiCodexUsageProvider.cacheVersion);
     expect(
       usage.supports?.({
         provider: alias.providerId,
@@ -232,6 +234,21 @@ describe("codex adapter", () => {
     ]);
   });
 
+  test("preserves catalog kind in registered provider models", () => {
+    const image = model({
+      id: "gpt-image-2",
+      kind: "image",
+      contextWindow: 10_000,
+      maxTokens: 1_000,
+    });
+    const built = buildCodexAlias(
+      alias,
+      deps({ getBundledModels: () => [image] }),
+      [image],
+    );
+    expect(built.config.models?.[0]?.kind).toBe("image");
+  });
+
   test("restores full source metadata after OMP custom-model projection", () => {
     const source = model();
     const projected = model({
@@ -322,7 +339,7 @@ describe("codex adapter", () => {
   });
 
   test("returns an empty catalog only for explicit credential rejection", async () => {
-    for (const rejectedStatus of [401, 403] as const) {
+    for (const rejectedStatus of [401, 402, 403] as const) {
       const built = buildCodexAlias(
         alias,
         deps({

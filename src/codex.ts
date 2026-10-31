@@ -24,7 +24,7 @@ type CodexModelSpec = ModelSpec<"openai-codex-responses">;
 
 export interface CodexDiscoveryResult {
   models: CodexModelSpec[];
-  rejectedStatus?: 401 | 403;
+  rejectedStatus?: 401 | 402 | 403;
 }
 
 export interface CodexDeps {
@@ -179,6 +179,9 @@ export function buildCodexUsageAlias(alias: AliasDefinition): UsageProvider {
 
   return {
     id: alias.providerId,
+    ...(openaiCodexUsageProvider.cacheVersion !== undefined
+      ? { cacheVersion: openaiCodexUsageProvider.cacheVersion }
+      : {}),
     supports: (params) =>
       params.provider === alias.providerId &&
       (openaiCodexUsageProvider.supports?.(stockParams(params)) ??
@@ -298,6 +301,7 @@ export function toProviderModelConfig(
     id: model.id,
     name: aliasModelName(model.name, label),
     api: model.api,
+    ...(model.kind ? { kind: model.kind } : {}),
     reasoning: model.reasoning,
     ...(model.thinking ? { thinking: cloneValue(model.thinking) } : {}),
     input: [...model.input],
