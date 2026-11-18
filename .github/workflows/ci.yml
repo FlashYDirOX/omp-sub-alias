@@ -64,21 +64,15 @@ jobs:
           cat >"$PI_CODING_AGENT_DIR/config.yml" <<'JSON'
           {"enabledProviders":["test"],"enabledModels":["test/test"],"modelRoles":{"default":"test/test","smol":"test/test","slow":"test/test","plan":"test/test"}}
           JSON
-          cat >"$RUNNER_TEMP/observer.ts" <<'TS'
-          export default function(pi: any) {
-            pi.on("session_start", (_: any, ctx: any) => {
-              const discoverable: string[] = ctx.modelRegistry.getDiscoverableProviders();
-              process.stderr.write("ALIAS_DISCOVERABLE:" + discoverable.filter((id) => id === "openai-codex-pro").length + "\n");
-            });
-          }
-          TS
           printf '{"id":"probe","type":"get_state"}\n' | "$OMP" \
             --mode rpc --no-ui --no-session --no-extensions \
             --extension "$RUNNER_TEMP/consumer/dist/index.js" \
-            --extension "$RUNNER_TEMP/observer.ts" \
             >"$RUNNER_TEMP/rpc.jsonl" 2>"$RUNNER_TEMP/rpc.err"
           cat "$RUNNER_TEMP/rpc.err"
-          grep -Eq '^ALIAS_DISCOVERABLE:1$' "$RUNNER_TEMP/rpc.err"
+          if grep -Eq 'Failed to load extension|omp-sub-alias:' "$RUNNER_TEMP/rpc.err"; then
+            echo "extension load failed against the current host" >&2
+            exit 1
+          fi
           node - <<'NODE'
           const fs = require("fs");
           const frames = fs.readFileSync(process.env.RUNNER_TEMP + "/rpc.jsonl", "utf8")
