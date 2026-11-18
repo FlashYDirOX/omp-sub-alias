@@ -12,9 +12,9 @@ credentials independently from `openai-codex`.
 
 ## Why this exists
 
-A single OMP process can keep multiple ChatGPT/Codex subscription accounts
-available without named profiles, credential snapshots, automatic credential
-rotation, a proxy, or an external account switcher:
+One OMP process can keep several ChatGPT/Codex subscription accounts available
+without named profiles, credential snapshots, rotation, a proxy, or an external
+account switcher:
 
 ```text
 /login openai-codex
@@ -32,338 +32,191 @@ openai-codex-pro  -> credential namespace B
 openai-codex-work -> credential namespace C
 ```
 
-## Compatibility
+## How it works
 
-The implementation has verified OMP compatibility starting at 18.4.4. A host
-version is not treated as incompatible just because it has not yet been added to
-the verification matrix. Runtime startup fails only on demonstrated
-incompatibility, such as OMP actually lacking an API the extension requires; a
-version number by itself is diagnostic metadata. It uses the OMP-native
-two-argument provider API:
+The extension owns aliases and OAuth wiring. **OMP owns model loading.**
 
-```ts
-pi.registerProvider(name, config)
-```
+Each alias registers only:
 
-It imports only current OMP packages (`@oh-my-pi/pi-ai`,
-`@oh-my-pi/pi-catalog`, and `@oh-my-pi/pi-coding-agent`). It does not depend
-on the legacy `@earendil-works/*` package names and does not use
-`readStoredCredential`.
+- `baseUrl`/`api` for the Codex responses protocol;
+- the `openai-codex` OAuth login, refresh, and key resolution;
+- a `fetchDynamicModels` callback.
 
-OMP's extension loader owns canonical resolution for the host's `pi-ai` and
-`pi-coding-agent` packages. The checked-in runtime bundle carries the catalog,
-`pi-utils`, and `omptype` code it needs, so older supported hosts do not need a
-project-local development dependency graph. Host/catalog pairs remain useful
-verification metadata, not an allow-list.
+No model list, catalog, or per-model seed is registered or bundled. When OMP
+refreshes runtime providers it calls `fetchDynamicModels`, which uses the host's
+own Codex discovery (`@oh-my-pi/pi-catalog/discovery/codex`) and model builder
+(`@oh-my-pi/pi-catalog/build`). The resulting rows are cached by OMP in its
+SQLite model cache and resolved exactly like built-in provider rows.
 
-At extension load, omp-sub-alias checks the OMP capabilities it actually uses
-(`registerProvider`, `unregisterProvider`, event registration, and the runtime
-agent-directory accessor). The injected `pi.pi.VERSION` is retained as
-diagnostic/verification metadata, not as a version allow-list. Unverified
-host/catalog pairs continue running; a real API or registration failure is
-reported by the normal extension error path. Live model metadata is still
-refreshed from OMP's active `ModelRegistry` after startup.
+Consequences:
 
-Only Codex models with non-null context and output limits can be registered by
-the provider API. Models such as `gpt-image-2` with a null `maxTokens` value
-are excluded rather than assigned an invented limit.
+- The alias roster is whatever OMP can discover for that alias credential.
+  The extension cannot invent models, copy another provider's rows, or override
+  host metadata.
+- Context/output metadata, cache policy, pricing rules, and provider quirks are
+  the host catalog's.
+- `@oh-my-pi/*` imports are resolved from the running OMP host; the shipped
+  `dist/index.js` contains no catalog data.
 
-Current verified pairs:
+## Requirements
 
-| OMP host | Bundled pi-catalog | Status |
-| --- | --- | --- |
-| 18.4.4 | 18.4.4 | supported |
-| 18.4.4 | 18.14.1 | dependency-free extension load verified |
-| 18.4.5 | 18.4.4 | supported |
-| 18.4.5 | 18.4.5 | verified for local development after `sync-host` |
-| 18.4.5 | 18.14.1 | dependency-free extension load verified |
-| 18.4.9 | 18.4.9 | verified |
-| 18.4.9 | 18.14.1 | dependency-free extension load verified |
-| 18.14.1 | 18.14.1 | verified |
-
-For local development, after upgrading OMP, run:
-
-    bun run sync-host
-
-The sync helper resolves OMP from `OMP_REAL_BIN` / `OMP_BIN`, the active
-`PATH`, or Homebrew as a fallback. It does not assume a Homebrew prefix or
-select this repository's own `node_modules` OMP. It updates the local catalog
-and development dependencies to the detected host version without using the
-verification matrix as an allow-list, then regenerates the Bun install/lock
-state. Unverified OMP versions are allowed through this synchronization step so
-typechecking, tests, build verification, and a real extension-load smoke can
-determine whether anything actually broke.
-
-The runtime entry bundles the catalog, `pi-utils`, and `omptype` logic used for
-model metadata and discovery while keeping OMP-owned `pi-ai`,
-`pi-coding-agent`, and `pi-natives` imports external. This avoids source-graph
-resolution drift without creating duplicate host registries.
-The bundle omits the catalog's unrelated authentication-provider table; OAuth
-and provider credentials remain owned by the OMP host.
-Bundled third-party license notices are included in [LICENSE](LICENSE).
-`bun run smoke-host` skips when no usable OMP host or installed plugin is
-available. When both are present, an actual extension-load failure or a missing
-configured alias provider is a hard failure.
-
-## Why this is a native OMP implementation
-
-This project is implemented from scratch for OMP and does not depend on an
-upstream alias plugin or its runtime architecture.
-
-The older Pi-oriented approach relies on APIs such as
-`readStoredCredential` from historical coding-agent packages. OMP 18.x owns
-credential persistence in `@oh-my-pi/pi-ai`'s `AuthStorage`, and its legacy
-compatibility surface is not a stable contract for directly reading stored
-credentials. Reaching into that store from an extension would also make the
-alias responsible for refresh/writeback semantics that OMP already implements.
-
-Instead, `omp-sub-alias` registers the built-in Codex OAuth implementation
-again under a new provider id. OMP then performs login, storage, token refresh,
-API-key resolution, and logout using that alias id as the namespace. No
-credential-reader shim or internal database access is required.
-
-The implementation also uses OMP 18.x's actual
-`pi.registerProvider(name, config)` API rather than the newer one-object Pi
-provider registration form.
+- OMP with the extension provider API, host-remapped `@oh-my-pi/pi-catalog`
+  modules, and runtime provider discovery.
+- Tested pair: OMP `18.22.2` with `@oh-my-pi/pi-catalog` `18.22.2`.
+- Unlisted host versions are not blocked. The extension checks the APIs it uses
+  at load and reports a normal extension-load error when one is missing.
 
 ## Installation
 
 ### GitHub
 
-Tested OMP 18.4.x and 18.14.x hosts natively accept GitHub/git plugin sources. After
-publishing this repository, install the default branch with:
-
 ```bash
 omp install github:FlashYDirOX/omp-sub-alias
 ```
 
-Pin a release tag, branch, or commit by replacing REF with that ref:
+Pin a ref:
 
 ```bash
 omp install github:FlashYDirOX/omp-sub-alias#REF
 ```
 
-A full GitHub URL is also accepted:
-
-```bash
-omp install https://github.com/FlashYDirOX/omp-sub-alias#REF
-```
-
-The package manifest points OMP at `./dist/index.js`. That generated runtime
-bundle is committed for GitHub installations; `bun run build` regenerates it
-from the source and pinned catalog. npm packages also include the same entry.
+A full GitHub URL is also accepted. The package manifest points OMP at the
+committed `dist/index.js`; GitHub installs do not need a build lifecycle hook.
 
 ### Local development
 
-Synchronize development dependencies with the active OMP host, then link the
-repository through OMP's plugin manager:
+Synchronize the development dependency graph with the active OMP host, build,
+then link the checkout:
 
 ```bash
 bun run sync-host
+bun run build
 omp plugin link /absolute/path/to/omp-sub-alias
 ```
 
-For verification:
+## Usage
 
 ```bash
-bun run verify
-omp --extension /absolute/path/to/omp-sub-alias/src/index.ts
+omp
+/login openai-codex
+/login openai-codex-pro
+/model openai-codex-pro/gpt-6.2-sol
 ```
 
-### npm
+`/model` lists whatever the host discovered for that alias. Model ids are the
+host's ids; display names keep the alias label (for example,
+`GPT-6.2 Sol (Codex Pro)`) so accounts remain distinguishable.
 
-Once this package is published to npm, OMP 18.x accepts normal npm package
-specs:
+### Device-code companions
+
+Every alias also registers `<alias-id>-device`, for example
+`openai-codex-pro-device`. It uses the same OAuth implementation through the
+device-code flow and stores credentials under the main alias id. It is a login
+entry point only and registers no models:
 
 ```bash
-omp install omp-sub-alias
+/login openai-codex-pro-device
 ```
 
 ## Configuration
 
-Configuration is JSON. The extension reads the user file first and then the
-project file; a project alias with the same generated provider id overrides the
-user entry.
+Aliases are read at extension load from, in order:
 
-User/profile configuration lives beside the active OMP agent state. For the
-default profile this is:
+1. `~/.omp/agent/omp-sub-alias.json`
+2. `<cwd>/.omp/omp-sub-alias.json`
 
-```text
-~/.omp/agent/omp-sub-alias.json
-```
-
-Named OMP profiles automatically use their own agent directory, for example
-`~/.omp/profiles/work/agent/omp-sub-alias.json`. The extension derives
-this path from OMP runtime `getAgentDir()` rather than assuming the
-default profile.
-
-Project configuration:
-
-```text
-<project>/.omp/omp-sub-alias.json
-```
-
-Example:
+Later definitions with the same provider id win.
 
 ```json
 {
   "aliases": [
-    {
-      "provider": "openai-codex",
-      "slug": "pro",
-      "label": "Codex Pro"
-    },
-    {
-      "provider": "openai-codex",
-      "slug": "work",
-      "label": "Codex Work"
-    }
+    { "provider": "openai-codex", "slug": "pro", "label": "Codex Pro" },
+    { "provider": "openai-codex", "slug": "work" }
   ]
 }
 ```
 
-This registers:
+| Field | Required | Meaning |
+| --- | --- | --- |
+| `provider` | yes | Source provider; currently only `openai-codex` |
+| `slug` | yes | Lowercase `[a-z0-9-]` suffix; provider id becomes `openai-codex-<slug>` |
+| `label` | no | Display label; defaults to the slug |
 
-```text
-openai-codex-pro
-openai-codex-work
+Slugs `device` and `*-device` are reserved for login companions.
+
+## Model loading, cache, and the first launch
+
+OMP resolves a session's model before it starts. At that point it reads the
+runtime provider's **cached** models (offline) and starts online discovery in
+the background.
+
+- With a warm cache the alias roster is available immediately.
+- A first launch after upgrading or after adding an alias may still see a
+  stale or empty alias cache. If `modelRoles.default` names a newly discovered
+  model, OMP can print
+  `Warning: Default model <provider>/<model> not found` once and fall back.
+- Any normal session (or a headless prompt run) lets OMP's background discovery
+  write the roster; later launches resolve it from the cache. To warm the cache
+  without the fallback, run one headless session on a model that is already
+  available:
+
+```bash
+omp -p --no-session --no-tools --model openai-codex-pro/gpt-6.1-sol "warm cache"
 ```
 
-Slugs are lowercase ASCII words separated by hyphens
-(`^[a-z0-9]+(?:-[a-z0-9]+)*$`).
-
-`device` and slugs ending in `-device` are reserved for the
-headless-login companion namespace. The extension also rejects aliases whose
-generated provider id is already built into OMP, and validates all configured
-alias/companion ids before registration so one alias cannot overwrite another.
-
-## Login
-
-Start OMP normally and authenticate each provider separately:
-
-```text
-/login openai-codex
-/login openai-codex-pro
-/login openai-codex-pro-device
-/login openai-codex-work
-/login openai-codex-work-device
-```
-
-The tested OMP 18.4.x and 18.14.x hosts also expose a native device-code flow for
-headless/SSH use.
-For every alias, the extension registers a login-only `-device` companion.
-For example, `/login openai-codex-pro-device` opens
-`https://auth.openai.com/codex/device` and shows a one-time code. The login
-helper stores the resulting credential under `openai-codex-pro`; it does not
-create a separate model namespace and does not write to stock `openai-codex`.
-
-Each alias also registers a provider-scoped usage adapter backed by OMP's native
-Codex usage implementation. After the alias is authenticated,
-`omp usage --provider openai-codex-pro` reports that account's own quota under
-the alias provider ID instead of merging it with stock `openai-codex`.
-
-OMP's own `AuthStorage` owns the credentials. The extension delegates login
-and refresh to OMP's built-in Codex OAuth implementation but registers that
-implementation under the alias provider id. It does not copy or read OMP's
-credential database.
-
-Consequently:
-
-- logging into `openai-codex-pro` does not replace `openai-codex`;
-- refreshing `openai-codex-pro` updates only that provider namespace;
-- `/logout openai-codex-pro` removes only that provider namespace;
-- there is no cross-provider credential pool or automatic account rotation.
-
-## Model selection
-
-After login:
-
-```text
-/model openai-codex/<model>
-/model openai-codex-pro/<model>
-/model openai-codex-work/<model>
-```
-
-The alias does not maintain a hard-coded Codex model catalog. It starts from
-the package baseline's bundled `openai-codex` models so the provider is
-resolvable before
-`session_start`, then refreshes from the live host model registry on
-`session_start` and again before agent turns. OMP's public
-`fetchDynamicModels(apiKey)` hook also runs Codex account-scoped discovery with
-the alias provider's own resolved OAuth access token.
-
-Full source-model metadata is rehydrated through OMP's public
-`oauth.modifyModels` hook so fields that are richer than the public
-`ProviderModelConfig` surface remain available at runtime.
-
-## Codex-native behavior
-
-Alias models keep the native `openai-codex-responses` API. Requests therefore
-continue through OMP's built-in Codex Responses transport rather than an
-OpenAI-compatible reimplementation. That preserves OMP-owned behavior such as
-Codex request headers, ChatGPT account-id extraction from the alias access
-token, Responses protocol handling, WebSocket/SSE transport selection,
-attestation, native history payloads, and current model compatibility metadata.
-
-The plugin does not set `OPENAI_CODEX_*` environment variables and does not
-write account ids or access tokens itself.
-
-## Multi-account example
-
-```text
-openai-codex
-    -> Personal ChatGPT account
-
-openai-codex-pro
-    -> Pro ChatGPT account
-
-openai-codex-work
-    -> Work ChatGPT account
-```
-
-All three can exist in the same normal OMP profile and the same OMP process.
+Discovery failures are raised by the extension, so OMP reports its
+`model discovery failed` warning and retries on its normal schedule. The
+extension does not fabricate a fallback roster.
 
 ## Security
 
-OAuth credentials are sensitive.
+- OAuth tokens and refresh state are owned and persisted by OMP under the alias
+  provider ids.
+- Device companions persist under the main alias id, never under the companion
+  id.
+- The extension never reads credential files directly, never logs tokens, and
+  ships no secrets or model catalog data.
+- Removing an alias credential in OMP does not affect the stock
+  `openai-codex` credential, and vice versa.
 
-Do not:
+## Migration: 0.1.x to 0.2.0
 
-- commit OMP credential files or databases;
-- upload credential databases;
-- sync credentials into a public repository;
-- print OAuth access tokens;
-- log refresh tokens;
-- add access tokens or ChatGPT account ids to this plugin's config.
+`0.2.0` removes the extension-side model seed.
 
-This extension's config contains provider aliases only. Credentials remain under
-OMP's credential-storage ownership.
+- The extension no longer bundles `@oh-my-pi/pi-catalog` and no longer registers
+  static models. The host discovers and builds every alias model row.
+- Existing alias configuration and stored credentials keep working.
+- Model metadata now follows the host catalog. Local
+  `openai-codex-pro.modelOverrides` entries in `models.yml` are redundant and
+  can be deleted.
+- Expect at most one stale-cache warning on the first launch after upgrading;
+  warm the cache as described above.
+- Hosts that cannot remap `@oh-my-pi/pi-catalog` for extensions are not
+  supported by this release.
 
-## Known limitations
+## Tested host
 
-- Version 0.1.x implements `openai-codex` aliases first. The config schema is
-  intentionally provider-generic, but other OAuth providers need an explicit
-  adapter before they are accepted.
-- The tested OMP 18.x public extension API lets an extension supply dynamic
-  models but
-  does not expose the built-in Codex model manager's
-  `dynamicModelsAuthoritative` switch. Alias discovery is account-scoped, but
-  bundled fallback models may remain visible even when a particular account
-  does not advertise them.
-- A real OAuth acceptance test requires interactive browser authentication and
-  is intentionally not automated by the test suite.
-- This repository has no bundled credentials, no credential migration logic,
-  and no credential rotation logic.
+| OMP host | Bundled host catalog | Status |
+| --- | --- | --- |
+| 18.22.2 | 18.22.2 | verified: alias OAuth, discovery, and model resolution |
 
-## Development
+This table records what was verified, not an allow-list.
+
+## Development and verification
 
 ```bash
-npm run typecheck
-npm test
-npm run build
-npm pack --dry-run
+bun run sync-host   # align dev dependencies with the active OMP host
+bun run typecheck
+bun test
+bun run build       # regenerates dist/index.js
+bun run smoke-host  # skips without a usable host/plugin install
+bun run verify      # typecheck + test + build + smoke + pack dry-run
 ```
 
-The test suite covers provider registration, multiple aliases, credential
-namespace behavior, refresh/logout isolation, live model metadata cloning, and
-alias-account model discovery.
+`dist/index.js` is committed for GitHub installs. CI rebuilds it and fails if
+the committed file differs. The runtime bundle must keep the host packages
+external; the build fails if catalog sources are bundled.
+
+## License
+
+MIT. See [LICENSE](LICENSE).

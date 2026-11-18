@@ -1,22 +1,15 @@
 import { getProviderDefinition } from "@oh-my-pi/pi-ai/registry";
 import { fetchCodexModels } from "@oh-my-pi/pi-catalog/discovery/codex";
-import { getBundledModels } from "@oh-my-pi/pi-catalog/models";
 import { getCodexAccountId } from "@oh-my-pi/pi-catalog/wire/codex";
 import type { ExtensionAPI } from "@oh-my-pi/pi-coding-agent";
 import { loadAliasConfig } from "./config.js";
-import { assertHostCompatibility } from "./host.js";
 import { registerAliases } from "./register.js";
 
 export default function ompSubAlias(pi: ExtensionAPI): void {
   assertRequiredHostApi(pi);
-  assertHostCompatibility({ hostVersion: pi.pi.VERSION });
   registerAliases(pi, {
     codex: {
       getProviderDefinition,
-      getBundledModels: (providerId) =>
-        getBundledModels(
-          providerId as Parameters<typeof getBundledModels>[0],
-        ),
       fetchCodexModels,
       getCodexAccountId,
     },
@@ -33,7 +26,6 @@ function assertRequiredHostApi(pi: ExtensionAPI): void {
   const required = [
     ["registerProvider", host.registerProvider],
     ["unregisterProvider", host.unregisterProvider],
-    ["on", host.on],
     ["pi.getAgentDir", runtime?.getAgentDir],
   ] as const;
   const missing = required
@@ -57,15 +49,9 @@ export {
   buildCodexDeviceAlias,
   buildCodexUsageAlias,
   CODEX_API,
+  CODEX_BASE_URL,
   CODEX_DEVICE_PROVIDER_ID,
   CODEX_PROVIDER_ID,
-  hydrateAliasModels,
   toProviderModelConfig,
 } from "./codex.js";
-export {
-  assertHostCompatibility,
-  packageCatalogVersion,
-  parseOmpVersion,
-  SUPPORTED_OMP_CATALOGS,
-} from "./host.js";
 export { registerAliases } from "./register.js";

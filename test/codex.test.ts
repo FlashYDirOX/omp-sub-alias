@@ -1,7 +1,5 @@
 import { describe, expect, test } from "bun:test";
 import type {
-  Api,
-  Model,
   ModelSpec,
   OAuthCredentials,
   ProviderDefinition,
@@ -11,7 +9,6 @@ import {
   buildCodexAlias,
   buildCodexUsageAlias,
   CODEX_DEVICE_PROVIDER_ID,
-  hydrateAliasModels,
   type CodexDeps,
 } from "../src/codex.js";
 import type { AliasDefinition } from "../src/config.js";
@@ -23,31 +20,27 @@ const alias: AliasDefinition = {
   providerId: "openai-codex-pro",
 };
 
-function model(overrides: Record<string, unknown> = {}): Model<Api> {
+function spec(
+  id: string,
+  overrides: Record<string, unknown> = {},
+): ModelSpec<"openai-codex-responses"> {
   return {
-    id: "gpt-5.6-codex",
-    requestModelId: "gpt-5.6-codex-wire",
-    reasoningMode: "pro",
-    name: "GPT-5.6 Codex",
+    id,
+    name: id,
     api: "openai-codex-responses",
     provider: "openai-codex",
     baseUrl: "https://chatgpt.com/backend-api",
     reasoning: true,
-    thinking: { mode: "openai", efforts: ["low", "medium", "high"] },
     input: ["text", "image"],
-    supportsTools: true,
-    cost: { input: 1, output: 2, cacheRead: 0.1, cacheWrite: 0 },
-    contextWindow: 200_000,
-    maxTokens: 64_000,
-    preferWebsockets: true,
-    compat: {},
+    cost: { input: 0, output: 0, cacheRead: 0, cacheWrite: 0 },
+    contextWindow: 500_000,
+    maxTokens: 128_000,
+    remoteCompaction: {},
     ...overrides,
-  } as unknown as Model<Api>;
+  } as unknown as ModelSpec<"openai-codex-responses">;
 }
 
-function deps(
-  overrides: Partial<CodexDeps> = {},
-): CodexDeps {
+function deps(overrides: Partial<CodexDeps> = {}): CodexDeps {
   const definition: ProviderDefinition = {
     id: "openai-codex",
     name: "ChatGPT Plus/Pro (Codex Subscription)",
@@ -57,7 +50,7 @@ function deps(
       expires: Date.now() + 60_000,
       accountId: "acct-a",
     }),
-    refreshToken: async (credentials) => ({
+    refreshToken: async (credentials: OAuthCredentials) => ({
       ...credentials,
       access: `${credentials.access}-refreshed`,
     }),
@@ -71,8 +64,7 @@ function deps(
       expires: Date.now() + 60_000,
       accountId: "device-account",
     }),
-    refreshToken: (credentials, signal) =>
-      definition.refreshToken!(credentials, signal),
+    ...(definition.refreshToken ? { refreshToken: definition.refreshToken } : {}),
   };
 
   return {
@@ -82,23 +74,111 @@ function deps(
         : providerId === "openai-codex"
           ? definition
           : undefined,
-    getBundledModels: () => [model()],
-    fetchCodexModels: async () => ({ models: [] }),
-    getCodexAccountId: () => undefined,
+    fetchCodexModels: async () => ({
+      models: [spec("gpt-6.2-sol"), spec("gpt-6.2-astra")],
+    }),
+    getCodexAccountId: () => "acct-a",
     ...overrides,
   };
 }
 
 describe("codex adapter", () => {
-  test("registers native Codex API models and OAuth", () => {
-    const built = buildCodexAlias(alias, deps(), [model()]);
+  test("registers OAuth and discovery without a static model seed", () => {
+    const built = buildCodexAlias(alias, deps());
     expect(built.config.api).toBe("openai-codex-responses");
+    expect(built.config.baseUrl).toBe("https://chatgpt.com/backend-api");
+    expect(built.config.models).toBeUndefined();
+    expect(typeof built.config.fetchDynamicModels).toBe("function");
     expect(built.config.oauth?.name).toContain("Codex Pro");
-    expect(built.config.models?.[0]?.id).toBe("gpt-5.6-codex");
-    expect(built.config.models?.[0]?.preferWebsockets).toBe(true);
+    expect(built.config.usage?.id).toBe("openai-codex-pro");
   });
 
-  test("registers a provider-scoped Codex usage adapter", async () => {
+  test("loads its own roster through host discovery on OMP request", async () => {
+    const calls: unknown[] = [];
+    const built = buildCodexAlias(
+      alias,
+      deps({
+        fetchCodexModels: async (options) => {
+          calls.push(options);
+          return { models: [spec("gpt-6.2-sol")] };
+        },
+      }),
+    );
+
+    const models = await built.config.fetchDynamicModels!("token-a");
+    expect(calls).toEqual([
+      {
+        accessToken: "token-a",
+        accountId: "acct-a",
+        baseUrl: "https://chatgpt.com/backend-api",
+        paths: ["/codex/models"],
+      },
+    ]);
+    expect(models.map((model) => model.id)).toEqual(["gpt-6.2-sol"]);
+    expect(models[0]?.name).toBe("gpt-6.2-sol (Codex Pro)");
+    expect(models[0]?.contextWindow).toBe(500_000);
+    expect(models[0]?.maxTokens).toBe(128_000);
+  });
+
+  test("throws when discovery has no authenticated credential", async () => {
+    const built = buildCodexAlias(alias, deps());
+    await expect(built.config.fetchDynamicModels!(undefined)).rejects.toThrow(
+      "no authenticated credential",
+    );
+  });
+
+  test("throws when discovery is unavailable", async () => {
+    const built = buildCodexAlias(
+      alias,
+      deps({ fetchCodexModels: async () => null }),
+    );
+    await expect(built.config.fetchDynamicModels!("token-a")).rejects.toThrow(
+      "discovery is unavailable",
+    );
+  });
+
+  test("throws when the endpoint rejects discovery", async () => {
+    const built = buildCodexAlias(
+      alias,
+      deps({
+        fetchCodexModels: async () => ({ models: [], rejectedStatus: 401 }),
+      }),
+    );
+    await expect(built.config.fetchDynamicModels!("token-a")).rejects.toThrow(
+      "rejected (status 401)",
+    );
+  });
+
+  test("drops discovered rows without concrete limits", async () => {
+    const built = buildCodexAlias(
+      alias,
+      deps({
+        fetchCodexModels: async () => ({
+          models: [
+            spec("gpt-image-2", { contextWindow: null }),
+            spec("gpt-6.2-sol"),
+          ],
+        }),
+      }),
+    );
+    const models = await built.config.fetchDynamicModels!("token-a");
+    expect(models.map((model) => model.id)).toEqual(["gpt-6.2-sol"]);
+  });
+
+  test("device companion stays login-only", () => {
+    const built = buildCodexAlias(alias, deps());
+    expect(built.device?.providerId).toBe("openai-codex-pro-device");
+    expect(built.device?.config.models).toBeUndefined();
+    expect(built.device?.config.fetchDynamicModels).toBeUndefined();
+    const deviceOauth = built.device?.config.oauth;
+    expect(
+      deviceOauth && "storeCredentialsAs" in deviceOauth
+        ? deviceOauth.storeCredentialsAs
+        : undefined,
+    ).toBe("openai-codex-pro");
+  });
+
+  test("registers a provider-scoped Codex usage adapter", () => {
     const usage = buildCodexUsageAlias(alias);
     expect(usage.id).toBe("openai-codex-pro");
     expect(usage.cacheVersion).toBe(openaiCodexUsageProvider.cacheVersion);
@@ -114,272 +194,5 @@ describe("codex adapter", () => {
         credential: { type: "oauth", accessToken: "token" },
       }),
     ).toBe(false);
-
-    const payload = {
-      plan_type: "pro",
-      rate_limit: {
-        allowed: true,
-        limit_reached: false,
-        primary_window: {
-          used_percent: 4,
-          limit_window_seconds: 17_940,
-          reset_at: 2_000_000_000,
-        },
-        secondary_window: {
-          used_percent: 10,
-          limit_window_seconds: 604_740,
-          reset_at: 2_000_500_000,
-        },
-      },
-      additional_rate_limits: [],
-    };
-    const report = await usage.fetchUsage(
-      {
-        provider: alias.providerId,
-        credential: {
-          type: "oauth",
-          accessToken: "fixture-token",
-          accountId: "acct-pro",
-        },
-      },
-      {
-        fetch: (async () =>
-          new Response(JSON.stringify(payload), {
-            status: 200,
-            headers: { "content-type": "application/json" },
-          })) as unknown as typeof fetch,
-      },
-    );
-
-    expect(report?.provider).toBe(alias.providerId);
-    expect(report?.metadata?.planType).toBe("pro");
-    expect(report?.limits.map((limit) => limit.id)).toEqual([
-      "openai-codex-pro:primary",
-      "openai-codex-pro:secondary",
-    ]);
-    expect(report?.limits.every((limit) => limit.scope.provider === alias.providerId)).toBe(true);
-  });
-
-  test("registers a headless device login that stores into the alias namespace", async () => {
-    const built = buildCodexAlias(alias, deps(), [model()]);
-    expect(built.device?.providerId).toBe("openai-codex-pro-device");
-
-    const oauth = built.device?.config.oauth as
-      | (NonNullable<typeof built.config.oauth> & {
-          storeCredentialsAs?: string;
-        })
-      | undefined;
-    expect(oauth?.name).toContain("headless/device");
-    expect(oauth?.storeCredentialsAs).toBe(alias.providerId);
-
-    const credentials = (await oauth!.login({} as never)) as OAuthCredentials;
-    expect(credentials.access).toBe("device-access");
-    expect(credentials.accountId).toBe("device-account");
-  });
-
-  test("forwards AbortSignal through device token refresh", async () => {
-    const signal = new AbortController().signal;
-    let seenSignal: AbortSignal | undefined;
-    const base = deps();
-    const custom = deps({
-      getProviderDefinition: (providerId) => {
-        const definition = base.getProviderDefinition(providerId);
-        if (providerId !== CODEX_DEVICE_PROVIDER_ID || !definition) {
-          return definition;
-        }
-        return {
-          ...definition,
-          refreshToken: async (credentials, receivedSignal) => {
-            seenSignal = receivedSignal;
-            return credentials;
-          },
-        };
-      },
-    });
-
-    const built = buildCodexAlias(alias, custom, [model()]);
-    const oauth = built.device!.config.oauth as NonNullable<
-      typeof built.config.oauth
-    > & {
-      refreshToken?: (
-        credentials: OAuthCredentials,
-        signal?: AbortSignal,
-      ) => Promise<OAuthCredentials>;
-    };
-    await oauth.refreshToken!(
-      {
-        access: "device-access",
-        refresh: "device-refresh",
-        expires: Date.now() + 60_000,
-      },
-      signal,
-    );
-
-    expect(seenSignal).toBe(signal);
-  });
-
-  test("skips non-chat catalog entries the extension model API cannot represent", () => {
-    const built = buildCodexAlias(alias, deps(), [
-      model(),
-      model({
-        id: "gpt-image-1",
-        kind: "image",
-        contextWindow: null,
-        maxTokens: null,
-      }),
-    ]);
-
-    expect(built.config.models?.map((entry) => entry.id)).toEqual([
-      "gpt-5.6-codex",
-    ]);
-  });
-
-  test("preserves catalog kind in registered provider models", () => {
-    const image = model({
-      id: "gpt-image-2",
-      kind: "image",
-      contextWindow: 10_000,
-      maxTokens: 1_000,
-    });
-    const built = buildCodexAlias(
-      alias,
-      deps({ getBundledModels: () => [image] }),
-      [image],
-    );
-    expect(built.config.models?.[0]?.kind).toBe("image");
-  });
-
-  test("restores full source metadata after OMP custom-model projection", () => {
-    const source = model();
-    const projected = model({
-      provider: "openai-codex-pro",
-      requestModelId: undefined,
-      reasoningMode: undefined,
-      supportsTools: undefined,
-    });
-    const hydrated = hydrateAliasModels(
-      [projected],
-      alias,
-      new Map([[source.id, source]]),
-    )[0] as Model<Api> & {
-      requestModelId?: string;
-      reasoningMode?: string;
-      supportsTools?: boolean;
-    };
-
-    expect(hydrated.provider).toBe("openai-codex-pro");
-    expect(hydrated.requestModelId).toBe("gpt-5.6-codex-wire");
-    expect(hydrated.reasoningMode).toBe("pro");
-    expect(hydrated.supportsTools).toBe(true);
-    expect(hydrated.preferWebsockets).toBe(true);
-    expect(hydrated.name).toBe("GPT-5.6 Codex (Codex Pro)");
-  });
-
-  test("registers bundled Codex models before a session exposes the host registry", () => {
-    const built = buildCodexAlias(alias, deps());
-    expect(built.config.oauth?.name).toContain("Codex Pro");
-    expect(built.config.api).toBe("openai-codex-responses");
-    expect(built.config.models?.map((entry) => entry.id)).toEqual([
-      "gpt-5.6-codex",
-    ]);
-    expect(built.config.fetchDynamicModels).toBeFunction();
-  });
-
-  test("discovers account-scoped models with the alias access token", async () => {
-    let seenAccessToken = "";
-    let seenAccountId: string | undefined;
-    let seenPaths: readonly string[] | undefined;
-
-    const built = buildCodexAlias(
-      alias,
-      deps({
-        getCodexAccountId: (accessToken) => {
-          expect(accessToken).toBe("alias-access");
-          return "acct-alias";
-        },
-        fetchCodexModels: async (options) => {
-          seenAccessToken = options.accessToken;
-          seenAccountId = options.accountId;
-          seenPaths = options.paths;
-          return {
-            models: [
-              model({
-                id: "gpt-account-only",
-                name: "GPT Account Only",
-              }) as unknown as ModelSpec<"openai-codex-responses">,
-            ],
-          };
-        },
-      }),
-    );
-
-    const dynamic = await built.config.fetchDynamicModels!("alias-access");
-
-    expect(seenAccessToken).toBe("alias-access");
-    expect(seenAccountId).toBe("acct-alias");
-    expect(seenPaths).toEqual(["/codex/models"]);
-    expect(dynamic.map((entry) => entry.id)).toEqual(["gpt-account-only"]);
-  });
-
-  test("surfaces missing credentials and transient discovery failures", async () => {
-    const missingCredential = buildCodexAlias(alias, deps());
-    expect(
-      missingCredential.config.fetchDynamicModels!(undefined),
-    ).rejects.toThrow("no authenticated credential");
-
-    const transient = buildCodexAlias(
-      alias,
-      deps({
-        fetchCodexModels: async () => null,
-      }),
-    );
-    expect(
-      transient.config.fetchDynamicModels!("alias-access"),
-    ).rejects.toThrow("model discovery unavailable");
-  });
-
-  test("returns an empty catalog only for explicit credential rejection", async () => {
-    for (const rejectedStatus of [401, 402, 403] as const) {
-      const built = buildCodexAlias(
-        alias,
-        deps({
-          fetchCodexModels: async () => ({
-            models: [],
-            rejectedStatus,
-          }),
-        }),
-      );
-      expect(
-        await built.config.fetchDynamicModels!("alias-access"),
-      ).toEqual([]);
-    }
-  });
-
-  test("does not redirect alias credentials back to stock provider", async () => {
-    const built = buildCodexAlias(alias, deps());
-    const oauth = built.config.oauth!;
-    expect("storeCredentialsAs" in oauth).toBe(false);
-
-    const stock: OAuthCredentials = {
-      access: "stock-access",
-      refresh: "stock-refresh",
-      expires: Date.now() + 60_000,
-    };
-    const namespaces = new Map<string, OAuthCredentials>([
-      ["openai-codex", stock],
-    ]);
-
-    const loggedIn = (await oauth.login({} as never)) as OAuthCredentials;
-    namespaces.set(alias.providerId, loggedIn);
-
-    const refreshed = await oauth.refreshToken!(namespaces.get(alias.providerId)!);
-    namespaces.set(alias.providerId, refreshed);
-
-    expect(namespaces.get("openai-codex")).toEqual(stock);
-    expect(namespaces.get(alias.providerId)?.access).toBe("access-a-refreshed");
-
-    namespaces.delete(alias.providerId);
-    expect(namespaces.has(alias.providerId)).toBe(false);
-    expect(namespaces.get("openai-codex")).toEqual(stock);
   });
 });

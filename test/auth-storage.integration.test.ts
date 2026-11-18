@@ -3,8 +3,6 @@ import { Database } from "bun:sqlite";
 import {
   AuthStorage,
   SqliteAuthCredentialStore,
-  type Api,
-  type Model,
   type OAuthCredential,
   type ProviderDefinition,
 } from "@oh-my-pi/pi-ai";
@@ -32,22 +30,6 @@ afterEach(() => {
   unregisterOAuthProvider(alias.providerId);
   unregisterOAuthProvider(`${alias.providerId}-device`);
 });
-
-function sourceModel(): Model<Api> {
-  return {
-    id: "gpt-5.5",
-    name: "GPT-5.5",
-    api: "openai-codex-responses",
-    provider: "openai-codex",
-    baseUrl: "https://chatgpt.com/backend-api",
-    reasoning: true,
-    input: ["text"],
-    cost: { input: 1, output: 1, cacheRead: 0, cacheWrite: 0 },
-    contextWindow: 200_000,
-    maxTokens: 64_000,
-    compat: {},
-  } as unknown as Model<Api>;
-}
 
 describe("OMP AuthStorage integration", () => {
   test("runtime provider registration preserves the device alias credential target", () => {
@@ -79,7 +61,6 @@ describe("OMP AuthStorage integration", () => {
                 }),
               }
             : undefined,
-      getBundledModels: () => [sourceModel()],
       fetchCodexModels: async () => ({ models: [] }),
       getCodexAccountId: () => undefined,
     });
@@ -139,7 +120,6 @@ describe("OMP AuthStorage integration", () => {
           : providerId === "openai-codex"
             ? definition
             : undefined,
-      getBundledModels: () => [sourceModel()],
       fetchCodexModels: async () => ({ models: [] }),
       getCodexAccountId: () => undefined,
     };

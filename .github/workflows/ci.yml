@@ -24,16 +24,8 @@ jobs:
       - run: git diff --exit-code -- dist/index.js
       - run: bun audit --production
 
-  omp-host-matrix:
+  omp-host-load:
     runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        omp-version:
-          - "18.4.4"
-          - "18.4.5"
-          - "18.4.9"
-          - "18.14.1"
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
@@ -49,8 +41,11 @@ jobs:
           mkdir -p "$RUNNER_TEMP/omp-host"
           cd "$RUNNER_TEMP/omp-host"
           npm init -y >/dev/null
-          npm install --no-audit --no-fund "@oh-my-pi/pi-coding-agent@${{ matrix.omp-version }}" "@oh-my-pi/pi-ai@${{ matrix.omp-version }}" "@oh-my-pi/pi-catalog@${{ matrix.omp-version }}"
-      - name: Smoke test the dependency-free Git installation entry
+          npm install --no-audit --no-fund \
+            "@oh-my-pi/pi-coding-agent@18.22.2" \
+            "@oh-my-pi/pi-ai@18.22.2" \
+            "@oh-my-pi/pi-catalog@18.22.2"
+      - name: Load the extension against the current host
         env:
           OMP: ${{ runner.temp }}/omp-host/node_modules/.bin/omp
           HOME: ${{ runner.temp }}/alias-home
@@ -72,8 +67,8 @@ jobs:
           cat >"$RUNNER_TEMP/observer.ts" <<'TS'
           export default function(pi: any) {
             pi.on("session_start", (_: any, ctx: any) => {
-              const models = ctx.modelRegistry.getAll().filter((model: any) => model.provider === "openai-codex-pro");
-              process.stderr.write("ALIAS_REGISTRY_COUNT:" + models.length + "\n");
+              const discoverable: string[] = ctx.modelRegistry.getDiscoverableProviders();
+              process.stderr.write("ALIAS_DISCOVERABLE:" + discoverable.filter((id) => id === "openai-codex-pro").length + "\n");
             });
           }
           TS
@@ -83,7 +78,7 @@ jobs:
             --extension "$RUNNER_TEMP/observer.ts" \
             >"$RUNNER_TEMP/rpc.jsonl" 2>"$RUNNER_TEMP/rpc.err"
           cat "$RUNNER_TEMP/rpc.err"
-          grep -Eq '^ALIAS_REGISTRY_COUNT:[1-9][0-9]*$' "$RUNNER_TEMP/rpc.err"
+          grep -Eq '^ALIAS_DISCOVERABLE:1$' "$RUNNER_TEMP/rpc.err"
           node - <<'NODE'
           const fs = require("fs");
           const frames = fs.readFileSync(process.env.RUNNER_TEMP + "/rpc.jsonl", "utf8")

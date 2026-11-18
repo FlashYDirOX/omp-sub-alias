@@ -19,6 +19,7 @@ import type { AliasDefinition } from "./config.js";
 export const CODEX_PROVIDER_ID = "openai-codex";
 export const CODEX_DEVICE_PROVIDER_ID = "openai-codex-device";
 export const CODEX_API = "openai-codex-responses" as Api;
+export const CODEX_BASE_URL = "https://chatgpt.com/backend-api";
 
 type CodexModelSpec = ModelSpec<"openai-codex-responses">;
 
@@ -29,7 +30,6 @@ export interface CodexDiscoveryResult {
 
 export interface CodexDeps {
   getProviderDefinition(providerId: string): ProviderDefinition | undefined;
-  getBundledModels(providerId: string): readonly Model<Api>[];
   fetchCodexModels(options: {
     accessToken: string;
     accountId?: string;
@@ -46,7 +46,6 @@ export interface CodexDeviceAliasBuild {
 
 export interface CodexAliasBuild {
   config: ProviderConfig;
-  sourceModels: ReadonlyMap<string, Model<Api>>;
   device?: CodexDeviceAliasBuild;
 }
 
@@ -54,10 +53,17 @@ type ExtensionOAuthConfig = NonNullable<ProviderConfig["oauth"]> & {
   storeCredentialsAs?: string;
 };
 
+/**
+ * Build an alias provider that lets OMP load its own model roster.
+ *
+ * No static `models` are supplied: OMP calls `fetchDynamicModels` through its
+ * normal runtime-provider discovery and cache. Discovery and model metadata
+ * both come from the host's `@oh-my-pi/pi-catalog` modules, so the alias can
+ * only expose rows the host itself understands.
+ */
 export function buildCodexAlias(
   alias: AliasDefinition,
   deps: CodexDeps,
-  sourceModelsInput?: readonly Model<Api>[],
 ): CodexAliasBuild {
   if (alias.provider !== CODEX_PROVIDER_ID) {
     throw new Error(`unsupported provider: ${alias.provider}`);
@@ -68,14 +74,6 @@ export function buildCodexAlias(
     throw new Error("OMP exposes no openai-codex OAuth login flow");
   }
   const deviceDefinition = deps.getProviderDefinition(CODEX_DEVICE_PROVIDER_ID);
-
-  const seedModels =
-    sourceModelsInput ?? deps.getBundledModels(CODEX_PROVIDER_ID);
-  const sourceModels = new Map(
-    seedModels
-      .filter(isRegisterableCodexModel)
-      .map((model) => [model.id, cloneModel(model)]),
-  );
 
   const oauth: ExtensionOAuthConfig = {
     name: `${definition.name} — ${alias.label}`,
@@ -96,56 +94,55 @@ export function buildCodexAlias(
       : {
           getApiKey: (credentials: OAuthCredentials) => credentials.access,
         }),
-    modifyModels: (models: Model<Api>[]) =>
-      hydrateAliasModels(models, alias, sourceModels),
   };
-
-  const models = [...sourceModels.values()];
-  if (models.length === 0) {
-    throw new Error("OMP exposes no registerable bundled openai-codex models");
-  }
 
   const device =
     deviceDefinition?.login
       ? buildCodexDeviceAlias(alias, deviceDefinition)
       : undefined;
 
-  const baseUrl = models[0]!.baseUrl;
   return {
     config: {
-      baseUrl,
+      baseUrl: CODEX_BASE_URL,
       api: CODEX_API,
       usage: buildCodexUsageAlias(alias),
-      models: models.map((model) =>
-        toProviderModelConfig(model, alias.label),
-      ),
       oauth,
       fetchDynamicModels: async (apiKey) => {
         if (!apiKey) {
-          throw new Error("Codex alias discovery has no authenticated credential");
+          throw new Error(
+            "Codex alias discovery has no authenticated credential",
+          );
         }
 
         const accountId = deps.getCodexAccountId(apiKey);
         const result = await deps.fetchCodexModels({
           accessToken: apiKey,
           ...(accountId ? { accountId } : {}),
-          baseUrl,
+          baseUrl: CODEX_BASE_URL,
           paths: ["/codex/models"],
         });
         if (!result) {
-          throw new Error("Codex alias model discovery unavailable");
+          throw new Error("Codex alias model discovery is unavailable");
         }
-        if (result.rejectedStatus !== undefined) return [];
+        if (result.rejectedStatus !== undefined) {
+          throw new Error(
+            `Codex alias model discovery was rejected (status ${result.rejectedStatus})`,
+          );
+        }
 
         return result.models.flatMap((modelSpec) => {
           const fullModel = buildModel(modelSpec) as Model<Api>;
-          if (!isRegisterableCodexModel(fullModel)) return [];
-          sourceModels.set(fullModel.id, cloneModel(fullModel));
+          if (
+            fullModel.api !== CODEX_API ||
+            fullModel.contextWindow === null ||
+            fullModel.maxTokens === null
+          ) {
+            return [];
+          }
           return [toProviderModelConfig(fullModel, alias.label)];
         });
       },
     },
-    sourceModels,
     ...(device ? { device } : {}),
   };
 }
@@ -264,29 +261,6 @@ export function buildCodexDeviceAlias(
   return { providerId, config: { oauth } };
 }
 
-export function hydrateAliasModels(
-  models: Model<Api>[],
-  alias: AliasDefinition,
-  sourceModels: ReadonlyMap<string, Model<Api>>,
-): Model<Api>[] {
-  return models.map((model) => {
-    if (model.provider !== alias.providerId) return model;
-
-    const source = sourceModels.get(model.id);
-    if (!source) return model;
-
-    const hydrated = cloneModel(source);
-    return {
-      ...hydrated,
-      provider: alias.providerId,
-      name: aliasModelName(source.name, alias.label),
-      baseUrl: model.baseUrl || source.baseUrl,
-      api: source.api,
-      isOAuth: true,
-    } as Model<Api>;
-  });
-}
-
 export function toProviderModelConfig(
   model: Model<Api>,
   label: string,
@@ -299,7 +273,7 @@ export function toProviderModelConfig(
 
   return {
     id: model.id,
-    name: aliasModelName(model.name, label),
+    name: `${model.name} (${label})`,
     api: model.api,
     ...(model.kind ? { kind: model.kind } : {}),
     reasoning: model.reasoning,
@@ -339,23 +313,6 @@ function rewriteCodexProviderValue(
   return value.startsWith(prefix)
     ? `${aliasProviderId}${value.slice(CODEX_PROVIDER_ID.length)}`
     : value;
-}
-
-function isRegisterableCodexModel(model: Model<Api>): boolean {
-  return (
-    model.provider === CODEX_PROVIDER_ID &&
-    model.api === CODEX_API &&
-    model.contextWindow !== null &&
-    model.maxTokens !== null
-  );
-}
-
-function aliasModelName(name: string, label: string): string {
-  return `${name} (${label})`;
-}
-
-function cloneModel<T extends Model<Api>>(model: T): T {
-  return cloneValue(model);
 }
 
 function cloneValue<T>(value: T): T {
