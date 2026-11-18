@@ -155,14 +155,19 @@ the background.
   stale or empty alias cache. If `modelRoles.default` names a newly discovered
   model, OMP can print
   `Warning: Default model <provider>/<model> not found` once and fall back.
-- Any normal session (or a headless prompt run) lets OMP's background discovery
-  write the roster; later launches resolve it from the cache. To warm the cache
-  without the fallback, run one headless session on a model that is already
-  available:
+- OMP refetches a runtime provider at most once per discovery-cache TTL. To
+  force the alias roster immediately (for example right after upgrading from
+  0.1.x), run:
 
 ```bash
-omp -p --no-session --no-tools --model openai-codex-pro/gpt-6.1-sol "warm cache"
+omp models refresh
+omp models openai-codex-pro
 ```
+
+  `omp models refresh` performs online discovery now and writes the cache; the
+  second command shows the refreshed roster. Waiting for the TTL works too:
+  the first launch after expiry still reads the old cache, its background
+  discovery writes the new roster, and the following launch resolves it.
 
 Discovery failures are raised by the extension, so OMP reports its
 `model discovery failed` warning and retries on its normal schedule. The
